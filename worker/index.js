@@ -26,9 +26,10 @@ export default {
         const code = newCode();
         const r = await stub(env, code).fetch('https://room/init', {
           method: 'POST',
-          body: JSON.stringify({ code, token: body.token, name: cleanName(body.name, 'Играч 1'), moveTime: body.moveTime, record: body.record }),
+          body: JSON.stringify({ code, token: body.token, name: cleanName(body.name), moveTime: body.moveTime, record: body.record, color: body.color, side: body.side }),
         });
         if (r.status === 409) continue;
+        if (r.status === 400 && !cleanName(body.name)) return json({ error: 'Въведете вашето име.' }, 400);
         if (!r.ok) return json({ error: 'Стаята не можа да бъде създадена.' }, r.status);
         return json({ code });
       }

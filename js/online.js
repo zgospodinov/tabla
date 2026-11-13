@@ -83,7 +83,16 @@
       <div class="lobby">
         <form class="card lobby-card" data-form="create">
           <h2>Създай стая</h2>
-          <label>Вашето име <input name="name" maxlength="20" autocomplete="nickname" placeholder="напр. Иван" value="${name}"></label>
+          <label>Вашето име <input name="name" maxlength="20" autocomplete="nickname" placeholder="напр. Иван" value="${name}" required></label>
+          <fieldset class="pick"><legend>Вашите пулове</legend>
+            <label><input type="radio" name="color" value="white" checked><i class="chip white"></i> Бели</label>
+            <label><input type="radio" name="color" value="black"><i class="chip black"></i> Черни</label>
+          </fieldset>
+          <fieldset class="pick"><legend>Вашият дом</legend>
+            <label><input type="radio" name="side" value="right" checked> Долу вдясно</label>
+            <label><input type="radio" name="side" value="left"> Долу вляво</label>
+          </fieldset>
+          <p class="muted small">Противникът получава другия цвят. Неговата дъска е завъртяна така, както я вижда човек, седнал срещу вас: неговият дом е от другата страна.</p>
           <label>Време за ход <select name="moveTime">${TIMES.map(([v, t]) => `<option value="${v}" ${v === 60 ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
           <p class="muted small">Времето тече от началото на реда ви (хвърляне и местене). Ако изтече, сървърът изиграва случаен позволен ход вместо вас.</p>
           <label class="check"><input type="checkbox" name="record" checked> Запиши играта</label>
@@ -92,7 +101,7 @@
         </form>
         <form class="card lobby-card" data-form="join">
           <h2>Влез със код</h2>
-          <label>Вашето име <input name="name" maxlength="20" autocomplete="nickname" placeholder="напр. Мария" value="${name}"></label>
+          <label>Вашето име <input name="name" maxlength="20" autocomplete="nickname" placeholder="напр. Мария" value="${name}" required></label>
           <label>Код на стаята <input name="code" class="code-input" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC234" required></label>
           <button class="btn primary" type="submit">Влез</button>
         </form>
@@ -110,11 +119,12 @@
       const btn = f.querySelector('button[type=submit]');
       const fd = new FormData(f);
       const name = String(fd.get('name') || '').trim().slice(0, 20);
+      if (!name) { mountLobby(el, 'Въведете вашето име.'); return; }
       rememberName(name);
       btn.disabled = true;
       try {
         if (f.dataset.form === 'create') {
-          const code = await createRoom({ name, moveTime: Number(fd.get('moveTime')), record: fd.get('record') === 'on' });
+          const code = await createRoom({ name, moveTime: Number(fd.get('moveTime')), record: fd.get('record') === 'on', color: fd.get('color'), side: fd.get('side') });
           location.hash = 'room-' + code;
         } else {
           const code = normCode(fd.get('code'));
@@ -124,6 +134,7 @@
           if (!info.exists) throw new Error('Няма стая с код ' + code + '.');
           if (info.full && !mine) throw new Error('Стаята ' + code + ' вече е пълна.');
           if (!mine) saveSeat(code, newToken(), name);
+          else if (!mine.name) saveSeat(code, mine.token, name);
           location.hash = 'room-' + code;
         }
       } catch (ex) {

@@ -238,3 +238,9 @@ body.fs .panel { max-height: calc(100dvh - 16px); }
 .share .link { flex: 1 1 180px; min-width: 0; font: inherit; font-size: .88rem; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
 .room-info { font-size: .86rem; }
 .link-btn { background: none; border: none; padding: 0; font: inherit; color: var(--con); text-decoration: underline; cursor: pointer; }
+.chip { display: inline-block; width: 14px; height: 14px; border-radius: 50%; vertical-align: -2px; margin-right: 6px; border: 1px solid #9c8a5c; }
+.chip.white { background: radial-gradient(circle at 40% 35%, #fff, #e9dfc4); }
+.chip.black { background: radial-gradient(circle at 40% 35%, #5a5a5a, #151515); border-color: #000; }
+.pick { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px 8px; margin: 0; display: flex; gap: 6px 18px; flex-wrap: wrap; }
+.pick legend { font-weight: 600; font-size: .95rem; padding: 0 4px; }
+.lobby-card .pick label { flex-direction: row; align-items: center; gap: 6px; font-weight: 400; }

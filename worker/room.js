@@ -9,9 +9,8 @@ const IDLE_TTL = 48 * 3600 * 1000;                 // празна/неакти�
 const MAX_EVENTS = 120;
 const rollDie = () => 1 + (crypto.getRandomValues(new Uint32Array(1))[0] % 6);
 
-export function cleanName(n, fallback) {
-  const s = String(n || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 20);
-  return s || fallback;
+export function cleanName(n) {
+  return String(n || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 20);
 }
 const validToken = (t) => typeof t === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(t);
 
@@ -38,12 +37,15 @@ export class Room extends DurableObject {
   async init(body) {
     if (this.g) return new Response('exists', { status: 409 });
     if (!validToken(body.token)) return new Response('bad token', { status: 400 });
+    const name = cleanName(body.name);
+    if (!name) return new Response('name required', { status: 400 });
     const moveTime = MOVE_TIMES.includes(Number(body.moveTime)) ? Number(body.moveTime) : 0;
     const now = Date.now();
     this.g = {
       code: body.code, created: now, active: now,
-      settings: { moveTime, record: body.record !== false },
-      seats: [{ token: body.token, name: cleanName(body.name, 'Играч 1') }, null],
+      // color и side са за създателя (място 0); вторият играч получава другия цвят и отсрещната страна
+      settings: { moveTime, record: body.record !== false, color: body.color === 'black' ? 'black' : 'white', side: body.side === 'left' ? 'left' : 'right' },
+      seats: [{ token: body.token, name }, null],
       board: E.initialBoard(), phase: 'waiting', turn: null, dice: null, turnId: 0,
       opening: [null, null], deadline: null, events: [], record: [], lastMove: null,
       score: [0, 0], winner: null, pts: 0, mars: false, rematch: [false, false], game: 1,
@@ -71,7 +73,9 @@ export class Room extends DurableObject {
     if (seat < 0) {
       seat = g.seats.findIndex((s) => !s);
       if (seat < 0) return reject('full', 'Стаята вече е пълна — в нея играят двама.');
-      g.seats[seat] = { token, name: cleanName(url.searchParams.get('name'), 'Играч ' + (seat + 1)) };
+      const name = cleanName(url.searchParams.get('name'));
+      if (!name) return reject('noname', 'Въведете име, за да влезете в стаята.');
+      g.seats[seat] = { token, name };
       this.event({ k: 'join', seat });
       if (g.seats[0] && g.seats[1] && g.phase === 'waiting') g.phase = 'opening';
     }

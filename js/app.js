@@ -196,7 +196,7 @@
     }
     const own = t === 24 ? G.board[0][24] > 0 : t >= 0 && G.board[0][t] > 0;
     if (own) G.msg = '<b>Този пул не може да се мести.</b> ' + E.whyCannot(G.board, HUMAN, t, G.turn.rem, needed(), G.turn.moves.length === 0 ? G.turn.forcedDie : null);
-    else if (t >= 0 && G.board[1][23 - t] > 0) G.msg = G.online ? 'Това са пуловете на противника (черните). Вие местите белите.' : 'Това са пулове на компютъра (черните). Вие местите белите.';
+    else if (t >= 0 && G.board[1][23 - t] > 0) G.msg = G.online ? `Това са пуловете на противника (${colorWord(1)}). Вие местите ${colorWord(0)}.` : 'Това са пулове на компютъра (черните). Вие местите белите.';
     else if (G.selected !== null) G.msg = 'Пулът не може да отиде там. Позволените места са оцветени.';
     G.selected = null; G.destMap = null; G.preview = null;
     render();
@@ -372,6 +372,20 @@
     el.classList.toggle('low', left <= 10);
   }
 
+  /** Цвят и страна на дома за всеки от двамата: създателят избира, вторият получава обратното.
+   *  Локално индекс 0 винаги е „аз“. Огледалният изглед (дом отляво) прави двете картини
+   *  точно завъртени на 180° една спрямо друга — както при истинска дъска между двама души. */
+  function seatLook() {
+    const s = G.online && G.online.srv;
+    if (!s) return { colors: ['white', 'black'], flip: false };
+    const c0 = s.settings.color || 'white', side0 = s.settings.side || 'right';
+    const other = (c) => (c === 'white' ? 'black' : 'white');
+    const mine = s.you === 0 ? c0 : other(c0);
+    const side = s.you === 0 ? side0 : (side0 === 'right' ? 'left' : 'right');
+    return { colors: [mine, other(mine)], flip: side === 'left', side };
+  }
+  const colorWord = (p) => (seatLook().colors[p] === 'white' ? 'белите' : 'черните');
+
   /** Ново състояние от сървъра. Дъската се обръща така, че играчът винаги е „0“ (белите, долу). */
   function onServerState(s) {
     const O = G.online, prev = O.srv;
@@ -446,8 +460,9 @@
       if (G.phase === 'join-error') h += `<p class="big">${esc2(O.error)}</p><a class="btn primary" href="#online">Към онлайн лобито</a>`;
       else if (G.phase === 'join') {
         h += `<p class="big">Покана за игра в стая <b>${O.code}</b>${O.info && O.info.host ? ` от <b>${esc2(O.info.host)}</b>` : ''}.</p>`;
+        if (O.info) h += `<p>Ще играете с <b>${O.info.settings.color === 'black' ? 'белите' : 'черните'}</b> пулове, домът ви е <b>${O.info.settings.side === 'left' ? 'долу вдясно' : 'долу вляво'}</b>.</p>`;
         if (O.info) h += `<p class="muted">Време за ход: ${ON().timeText(O.info.settings.moveTime)} · Запис: ${O.info.settings.record ? 'да' : 'не'}</p>`;
-        h += `<form class="join-form" data-form="join-room"><label>Вашето име <input name="name" maxlength="20" autocomplete="nickname" value="${esc2(ON().lastName())}" placeholder="напр. Мария"></label><button class="btn primary" type="submit">Влез в играта</button></form>`;
+        h += `<form class="join-form" data-form="join-room"><label>Вашето име <input name="name" maxlength="20" autocomplete="nickname" value="${esc2(ON().lastName())}" placeholder="напр. Мария" required></label><button class="btn primary" type="submit">Влез в играта</button></form>`;
         if (O.error) h += `<div class="msg">${esc2(O.error)}</div>`;
       } else h += '<p class="big">Свързване със стаята…</p>';
       return h + '</div>';
@@ -458,7 +473,7 @@
     const conn = O.status === 'open' ? '' : `<div class="msg">Връзката със сървъра прекъсна — свързваме се отново…</div>`;
     h += conn;
     h += `<div class="pips">Пипове: <b>вие ${E.pip(G.board, 0)}</b> · ${opp ? esc2(opp.name) : 'противник'} ${E.pip(G.board, 1)} · извадени: ${E.offCount(G.board, 0)} / ${E.offCount(G.board, 1)}</div>`;
-    h += `<div class="players"><span><i class="dot me"></i>Вие — белите</span><span><i class="dot ${opp && opp.online ? 'on' : 'off'}"></i>${opp ? `${esc2(opp.name)} — черните${opp.online ? '' : ' <span class="muted">(офлайн)</span>'}` : '<span class="muted">чакаме противник</span>'}</span></div>`;
+    h += `<div class="players"><span><i class="chip ${seatLook().colors[0]}"></i>Вие (${esc2(s.players[me] ? s.players[me].name : '')}) — ${colorWord(0)}, домът ви е ${seatLook().side === 'left' ? 'долу вляво' : 'долу вдясно'}</span><span><i class="chip ${seatLook().colors[1]}"></i><i class="dot ${opp && opp.online ? 'on' : 'off'}"></i>${opp ? `${esc2(opp.name)} — ${colorWord(1)}${opp.online ? '' : ' <span class="muted">(офлайн)</span>'}` : '<span class="muted">чакаме противник</span>'}</span></div>`;
     const clock = O.deadline ? ` <span class="clock" id="clock">${clockText()}</span>` : '';
     h += '<div class="status">';
     if (G.phase === 'waiting') {
@@ -541,6 +556,7 @@
   function boardView() {
     const dv = diceView();
     const view = { board: G.board, interactive: true, dice: dv.dice, diceSide: dv.side, sources: [], dests: [], arrows: [], lastArrows: [] };
+    if (G.online) Object.assign(view, seatLook());
     if (G.lastCpu && (G.phase === 'human-roll' || G.phase === 'cpu' || (G.phase === 'human-move' && !G.turn.moves.length))) {
       view.lastArrows = B.arrowsForPlay(G.lastCpu.before, CPU, G.lastCpu.moves, '#9aa0a6');
     }
@@ -751,6 +767,7 @@
     if (!f || !G || !G.online) return;
     e.preventDefault();
     const name = String(new FormData(f).get('name') || '').trim().slice(0, 20);
+    if (!name) { G.online.error = 'Въведете име, за да влезете в стаята.'; render(); return; }
     ON().rememberName(name);
     const seat = { token: ON().newToken(), name };
     ON().saveSeat(G.online.code, seat.token, name);

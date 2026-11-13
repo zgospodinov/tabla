@@ -63,11 +63,16 @@
 
   let UID = '';
   let uidCounter = 0;
+  // Цвят на пуловете на всеки играч и огледален изглед (дом отляво) — задават се за всяко рисуване.
+  let COLORS = ['white', 'black'], MIR = false;
+  const isW = (p) => COLORS[p] === 'white';
+  const mx = (x) => (MIR ? W - x : x);
   function checkerSvg(x, y, p, extraCls) {
-    const fill = p === 0 ? `url(#chkW${UID})` : `url(#chkB${UID})`;
-    const stroke = p === 0 ? '#9c8a5c' : '#000';
+    const w = isW(p);
+    const fill = w ? `url(#chkW${UID})` : `url(#chkB${UID})`;
+    const stroke = w ? '#9c8a5c' : '#000';
     return `<g class="chk ${extraCls || ''}"><circle cx="${x}" cy="${y}" r="${R - 1}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>` +
-      `<circle cx="${x}" cy="${y}" r="${R - 9}" fill="none" stroke="${p === 0 ? '#d8cba4' : '#4a4a4a'}" stroke-width="1.5"/></g>`;
+      `<circle cx="${x}" cy="${y}" r="${R - 9}" fill="none" stroke="${w ? '#d8cba4' : '#4a4a4a'}" stroke-width="1.5"/></g>`;
   }
 
   /**
@@ -78,6 +83,9 @@
   function svg(view) {
     const b = view.board;
     UID = 'u' + (++uidCounter);
+    COLORS = view.colors || ['white', 'black'];
+    MIR = !!view.flip;
+    let T = ''; // текстове и зарове — рисуват се извън огледалната група, за да не се обръщат
     let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" class="board-svg" role="img" aria-label="Дъска за табла">`;
     s += `<defs>
       <radialGradient id="chkW${UID}" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#e9dfc4"/></radialGradient>
@@ -85,7 +93,8 @@
       <linearGradient id="wood${UID}" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#e2bf86"/><stop offset="100%" stop-color="#cfa66a"/></linearGradient>
       ${['#f5b301', '#2e9e4f', '#7cb342', '#f0a020', '#e06020', '#d32f2f', '#5aa0ff', '#9aa0a6'].map((c, k) => `<marker id="ah${k}${UID}" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join('')}
     </defs>`;
-    // рамка и полета
+    // рамка и полета (при огледален изглед цялата геометрия се обръща хоризонтално)
+    s += MIR ? `<g transform="translate(${W},0) scale(-1,1)">` : '<g>';
     s += `<rect x="0" y="0" width="${W}" height="${H}" rx="18" fill="#4a2a14"/>`;
     s += `<rect x="${L}" y="${TOP}" width="360" height="600" fill="url(#wood${UID})"/>`;
     s += `<rect x="${RX}" y="${TOP}" width="360" height="600" fill="url(#wood${UID})"/>`;
@@ -100,15 +109,15 @@
     }
     // зони
     if (view.zones) {
-      const z = (x, y, t) => `<text x="${x}" y="${y}" class="zone-label" text-anchor="middle">${t}</text>`;
-      s += z(630, MID + 26, 'ВАШИЯТ ДОМ (1–6)') + z(210, MID + 26, 'ВЪНШНО ПОЛЕ (7–12)') + z(210, MID - 16, 'ВЪНШНО ПОЛЕ НА ПРОТИВНИКА (13–18)') + z(630, MID - 16, 'ДОМ НА ПРОТИВНИКА (19–24)');
+      const z = (x, y, t) => `<text x="${mx(x)}" y="${y}" class="zone-label" text-anchor="middle">${t}</text>`;
+      T += z(630, MID + 26, 'ВАШИЯТ ДОМ (1–6)') + z(210, MID + 26, 'ВЪНШНО ПОЛЕ (7–12)') + z(210, MID - 16, 'ВЪНШНО ПОЛЕ НА ПРОТИВНИКА (13–18)') + z(630, MID - 16, 'ДОМ НА ПРОТИВНИКА (19–24)');
     }
     // номера
     for (let h = 0; h < 24; h++) {
       const x = pointX(h), y = isTop(h) ? 20 : H - 10;
-      s += `<text x="${x}" y="${y}" class="pt-num" text-anchor="middle">${h + 1}</text>`;
+      T += `<text x="${mx(x)}" y="${y}" class="pt-num" text-anchor="middle">${h + 1}</text>`;
     }
-    s += `<text x="${TRAYX + TRAYW / 2}" y="${H - 10}" class="pt-num" text-anchor="middle">вън</text>`;
+    T += `<text x="${mx(TRAYX + TRAYW / 2)}" y="${H - 10}" class="pt-num" text-anchor="middle">вън</text>`;
     // дестинации
     for (const d of view.dests || []) {
       if (d.i < 0) continue;
@@ -131,15 +140,15 @@
         }
         if (c > 5) {
           const pos = stackPos(h, c - 1, c);
-          s += `<text x="${pos.x}" y="${pos.y + 6}" text-anchor="middle" class="stack-num ${p ? 'dark' : ''}">${c}</text>`;
+          T += `<text x="${mx(pos.x)}" y="${pos.y + 6}" text-anchor="middle" class="stack-num ${isW(p) ? '' : 'dark'}">${c}</text>`;
         }
       }
       for (let k = 0; k < b[p][24]; k++) { const pos = barPos(p, Math.min(k, 5)); s += checkerSvg(pos.x, pos.y, p); }
-      if (b[p][24] > 1) { const pos = barPos(p, Math.min(b[p][24] - 1, 5)); s += `<text x="${pos.x}" y="${pos.y + 6}" text-anchor="middle" class="stack-num ${p ? 'dark' : ''}">${b[p][24]}</text>`; }
+      if (b[p][24] > 1) { const pos = barPos(p, Math.min(b[p][24] - 1, 5)); T += `<text x="${mx(pos.x)}" y="${pos.y + 6}" text-anchor="middle" class="stack-num ${isW(p) ? '' : 'dark'}">${b[p][24]}</text>`; }
       const off = offCount(b, p);
       for (let k = 0; k < off; k++) {
         const pos = offPos(p, k);
-        s += `<rect x="${pos.x - 26}" y="${pos.y - 6}" width="52" height="12" rx="4" fill="${p === 0 ? '#f3ead2' : '#2a2a2a'}" stroke="${p === 0 ? '#9c8a5c' : '#000'}"/>`;
+        s += `<rect x="${pos.x - 26}" y="${pos.y - 6}" width="52" height="12" rx="4" fill="${isW(p) ? '#f3ead2' : '#2a2a2a'}" stroke="${isW(p) ? '#9c8a5c' : '#000'}"/>`;
       }
     }
     // източници (пулове, които могат да се местят)
@@ -168,18 +177,21 @@
       const mi = Math.max(0, palette.indexOf(a.color));
       s += `<path d="M${a.from.x},${a.from.y} Q${cx},${cy} ${a.to.x},${a.to.y}" fill="none" stroke="${a.color}" stroke-width="${a.faded ? 4 : 6}" stroke-linecap="round" ${a.faded ? 'stroke-dasharray="8 7" opacity="0.75"' : 'opacity="0.95"'} marker-end="url(#ah${mi}${UID})" class="arrow"/>`;
     }
+    s += '</g>';
     // зарове
     if (view.dice && view.dice.length) {
       const n = view.dice.length, size = n > 2 ? 40 : 50, gap = size + 12;
       const cx = view.diceSide === 'left' ? 210 : 630;
       view.dice.forEach((d, k) => {
         const x = cx + (k - (n - 1) / 2) * gap;
-        s += dieSvg(x, MID, d.v, d.p === 1, d.used, size);
+        T += dieSvg(mx(x), MID, d.v, !isW(d.p), d.used, size);
       });
     }
-    if (view.centerText) s += `<text x="${view.diceSide === 'left' ? 630 : 210}" y="${MID + 7}" text-anchor="middle" class="center-text">${view.centerText}</text>`;
+    if (view.centerText) T += `<text x="${mx(view.diceSide === 'left' ? 630 : 210)}" y="${MID + 7}" text-anchor="middle" class="center-text">${view.centerText}</text>`;
+    s += T;
     // зони за кликване
     if (view.interactive) {
+      s += MIR ? `<g transform="translate(${W},0) scale(-1,1)">` : '<g>';
       for (let h = 0; h < 24; h++) {
         const x = pointX(h);
         const y = isTop(h) ? TOP : MID;
@@ -187,6 +199,7 @@
       }
       s += `<rect x="${BARX}" y="${TOP}" width="${BARW}" height="600" fill="transparent" data-t="24" class="hit"/>`;
       s += `<rect x="${TRAYX - 10}" y="${TOP}" width="${TRAYW + 20}" height="600" fill="transparent" data-t="-1" class="hit"/>`;
+      s += '</g>';
     }
     return s + '</svg>';
   }
