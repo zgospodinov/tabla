@@ -13,6 +13,7 @@
       <button data-nav="home">Начало</button>
       <button data-nav="training">Тренировка</button>
       <button data-nav="game">Игра</button>
+      <button data-nav="online" data-online>Онлайн</button>
       <button data-nav="strategies">Стратегии</button>
       <button data-nav="rules">Правила</button>
       <button id="gear" class="gear" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-pop">⚙<span> Настройки</span></button>
@@ -34,6 +35,11 @@
         <p>Истинска игра срещу компютъра с избор на сила (лесно, нормално, трудно). Подсказка само при поискване.</p>
         <span class="go">Започни игра →</span>
       </a>
+      <a class="mode-card online" href="#online" data-online>
+        <div class="ic">🌐</div><h2>Онлайн с приятел</h2>
+        <p>Създайте стая, изпратете кода на приятел и играйте един срещу друг от различни места. Настройки за време за ход и запис на играта.</p>
+        <span class="go">Създай или влез в стая →</span>
+      </a>
       <a class="mode-card strat" href="#strategies">
         <div class="ic">♟️</div><h2>Стратегии</h2>
         <p>Пет известни стратегии като симулации ход по ход: бягаща игра, прайм, задържаща игра, блиц и обратна игра — с подробно обяснение на всеки ход.</p>
@@ -52,6 +58,10 @@
     <aside id="panel" class="panel" aria-live="polite"></aside>
   </main>
 
+  <main id="view-online" class="home online-view" hidden>
+    <div id="online-content"></div>
+  </main>
+
   <main id="view-strategies" class="strats" hidden>
     <div id="strategies-content"></div>
   </main>
@@ -68,6 +78,7 @@
   <script src="js/strat-core.js"></script>
   <script src="js/strategies-data.js"></script>
   <script src="js/strategies.js"></script>
+  <script src="js/online.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

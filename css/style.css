@@ -211,3 +211,30 @@ body.fs .panel { max-height: calc(100dvh - 16px); }
   body.fs .board-wrap, body.fs .strat-play .board-wrap { max-width: 100%; }
   body.fs .panel { max-height: none; }
 }
+
+/* онлайн игра */
+.mode-card.online { border-top-color: var(--blue); }
+.mode-tag.online { background: var(--blue); }
+.lobby { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin-top: 20px; }
+.lobby-card { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; }
+.lobby-card h2 { margin: 0; font-size: 1.25rem; }
+.lobby-card label, .join-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: .95rem; }
+.lobby-card label.check { flex-direction: row; align-items: center; gap: 8px; }
+.lobby-card input:not([type=checkbox]), .lobby-card select, .join-form input { font: inherit; font-weight: 400; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); min-width: 0; }
+.lobby-card .btn { align-self: flex-start; }
+.code-input { text-transform: uppercase; letter-spacing: .25em; font-family: ui-monospace, Consolas, monospace !important; font-size: 1.2rem !important; }
+.small { font-size: .86rem; margin: -4px 0 0; }
+.join-form { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.join-form .btn { align-self: flex-start; }
+.players { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .93rem; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; border: 1px solid var(--muted); }
+.dot.me { background: #efe2c2; }
+.dot.on { background: #2e9e4f; border-color: #2e9e4f; }
+.dot.off { background: transparent; }
+.clock { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); font-family: ui-monospace, Consolas, monospace; font-weight: 700; }
+.clock.low { color: #fff; background: var(--con); border-color: var(--con); }
+.share { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.room-code { font-family: ui-monospace, Consolas, monospace; font-size: 1.7rem; font-weight: 700; letter-spacing: .2em; padding: 2px 12px; border-radius: 8px; background: var(--bg); border: 1px dashed var(--muted); user-select: all; }
+.share .link { flex: 1 1 180px; min-width: 0; font: inherit; font-size: .88rem; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
+.room-info { font-size: .86rem; }
+.link-btn { background: none; border: none; padding: 0; font: inherit; color: var(--con); text-decoration: underline; cursor: pointer; }

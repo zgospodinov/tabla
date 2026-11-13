@@ -1,0 +1,17 @@
+# Качват се само файловете на приложението: index.html, css/, js/
+.git
+.gitignore
+.assetsignore
+.wrangler
+.claude
+node_modules
+worker
+tests
+tools
+dist
+package.json
+package-lock.json
+wrangler.jsonc
+*.md
+serve.js
+build-artifact.js

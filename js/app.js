@@ -54,14 +54,23 @@
 
   function showView(name) {
     if (name !== 'strategies' && window.TablaStrategies) window.TablaStrategies.stop();
-    for (const v of ['home', 'play', 'rules', 'strategies']) $('#view-' + v).hidden = v !== name;
+    for (const v of ['home', 'play', 'rules', 'strategies', 'online']) $('#view-' + v).hidden = v !== name;
     document.querySelectorAll('.nav button').forEach((b) => b.classList.toggle('active', b.dataset.nav === (name === 'play' ? G && G.mode : name)));
     window.scrollTo(0, 0);
   }
   function route() {
     const h = (location.hash || '#home').slice(1);
+    if (!h.startsWith('room-')) leaveOnline();
     if (h === 'training' || h === 'game') {
       if (!G || G.mode !== h) newGame(h);
+      showView('play');
+      render();
+    } else if (h === 'online') {
+      clearTimeout(timer); showView('online');
+      if (window.TablaOnline) window.TablaOnline.mountLobby($('#online-content'));
+    } else if (h.startsWith('room-') && window.TablaOnline && window.TablaOnline.available) {
+      const code = h.slice(5).toUpperCase();
+      if (!G || !G.online || G.online.code !== code) startOnline(code);
       showView('play');
       render();
     } else if (h === 'rules' || h.startsWith('r-')) {
@@ -74,7 +83,7 @@
       if (window.TablaStrategies) window.TablaStrategies.open(h === 'strategies' ? null : h.slice(2));
     }
     else { showView('home'); }
-    const fsOk = h === 'training' || h === 'game' || h.startsWith('s-');
+    const fsOk = h === 'training' || h === 'game' || h.startsWith('s-') || h.startsWith('room-');
     if (!fsOk) setFs(false);
   }
 
@@ -187,7 +196,7 @@
     }
     const own = t === 24 ? G.board[0][24] > 0 : t >= 0 && G.board[0][t] > 0;
     if (own) G.msg = '<b>Този пул не може да се мести.</b> ' + E.whyCannot(G.board, HUMAN, t, G.turn.rem, needed(), G.turn.moves.length === 0 ? G.turn.forcedDie : null);
-    else if (t >= 0 && G.board[1][23 - t] > 0) G.msg = 'Това са пулове на компютъра (черните). Вие местите белите.';
+    else if (t >= 0 && G.board[1][23 - t] > 0) G.msg = G.online ? 'Това са пуловете на противника (черните). Вие местите белите.' : 'Това са пулове на компютъра (черните). Вие местите белите.';
     else if (G.selected !== null) G.msg = 'Пулът не може да отиде там. Позволените места са оцветени.';
     G.selected = null; G.destMap = null; G.preview = null;
     render();
@@ -219,6 +228,13 @@
 
   function endHumanTurn() {
     const t = G.turn;
+    if (G.online) {
+      const moves = t.moves.map((m) => ({ from: m.from, to: m.to, die: m.die }));
+      if (G.online.conn.send({ t: 'move', turnId: G.online.turnId, moves })) { G.phase = 'sent'; G.msg = null; }
+      else G.msg = 'Няма връзка със сървъра. Ходът ще може да се изпрати, щом връзката се възстанови.';
+      render();
+      return;
+    }
     const txt = E.playText(HUMAN, t.moves);
     if (t.moves.length) {
       const sc = E.evaluate(G.board, HUMAN);
@@ -295,9 +311,221 @@
     render();
   }
 
+  // ---------------- онлайн игра ----------------
+  const ON = () => window.TablaOnline;
+  function leaveOnline() {
+    if (G && G.online) { G.online.conn && G.online.conn.close(); clearInterval(G.online.clockT); G = null; }
+  }
+  function startOnline(code) {
+    leaveOnline();
+    clearTimeout(timer);
+    newGame('online');
+    G.log = [];
+    G.phase = 'connecting';
+    G.online = { code, conn: null, srv: null, me: 0, turnId: -1, status: 'connecting', error: null, deadline: null, clockT: null };
+    if (!ON().CODE_RE.test(code)) { G.phase = 'join-error'; G.online.error = 'Невалиден код на стая.'; return; }
+    const seat = ON().seatFor(code);
+    if (!seat) { G.phase = 'join'; checkRoom(code); return; }
+    openConn(seat);
+  }
+  async function checkRoom(code) {
+    try {
+      const info = await ON().roomInfo(code);
+      if (!G || !G.online || G.online.code !== code || G.phase !== 'join') return;
+      if (!info.exists) { G.phase = 'join-error'; G.online.error = 'Няма стая с код ' + code + '. Може да е изтекла.'; }
+      else if (info.full) { G.phase = 'join-error'; G.online.error = 'Стаята ' + code + ' вече е пълна.'; }
+      else G.online.info = info;
+    } catch (e) { G.online.error = 'Сървърът не отговаря. Опитайте пак след малко.'; }
+    render();
+  }
+  function openConn(seat) {
+    const O = G.online, code = O.code;
+    const live = () => G && G.online === O;
+    O.conn = ON().connect(code, seat, {
+      state: (s) => { if (live()) onServerState(s); },
+      status: (st) => {
+        if (!live()) return;
+        O.status = st;
+        if (st === 'replaced') { G.phase = 'join-error'; O.error = 'Стаята е отворена в друг раздел или прозорец. Продължете играта там.'; }
+        render();
+      },
+      error: (m) => {
+        if (!live()) return;
+        if (m.code === 'rule') { G.msg = m.msg; render(); return; }
+        G.phase = 'join-error'; O.error = m.msg; render();
+      },
+    });
+    clearInterval(O.clockT);
+    O.clockT = setInterval(updateClock, 500);
+  }
+  function clockText() {
+    const O = G.online;
+    if (!O || !O.deadline) return '';
+    const left = Math.max(0, Math.ceil((O.deadline - Date.now()) / 1000));
+    return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  }
+  function updateClock() {
+    const el = document.getElementById('clock');
+    if (!el || !G || !G.online) return;
+    el.textContent = clockText();
+    const left = (G.online.deadline - Date.now()) / 1000;
+    el.classList.toggle('low', left <= 10);
+  }
+
+  /** Ново състояние от сървъра. Дъската се обръща така, че играчът винаги е „0“ (белите, долу). */
+  function onServerState(s) {
+    const O = G.online, prev = O.srv;
+    O.srv = s; O.me = s.you;
+    if (prev && (prev.phase !== s.phase || prev.turnId !== s.turnId)) { G.msg = null; G.confirmResign = false; }
+    const me = s.you, op = 1 - me;
+    const persp = (b) => (me === 0 ? b : [b[1], b[0]]);
+    O.deadline = s.deadline ? Date.now() + (s.deadline - s.now) : null;
+    G.log = onlineLog(s);
+    G.lastCpu = s.lastMove && s.lastMove.seat === op ? { before: persp(s.lastMove.before), moves: s.lastMove.moves } : null;
+    // звуци
+    const newRoll = !prev || prev.turnId !== s.turnId || String(prev.opening) !== String(s.opening);
+    if (prev && newRoll && (s.dice || s.opening.some((x) => x != null))) SND.dice();
+    if (prev && s.lastMove && (!prev.lastMove || prev.lastMove.at !== s.lastMove.at) && s.lastMove.seat === op) {
+      let b = persp(s.lastMove.before);
+      s.lastMove.moves.forEach((m, i) => { const nb = E.applyMove(b, CPU, m); moveSound(b, nb, CPU, i * 0.18); b = nb; });
+    }
+    const myTurn = s.turn === me;
+    if (s.phase === 'move' && myTurn) {
+      if (O.turnId === s.turnId && (G.phase === 'human-move' || G.phase === 'human-nomove' || G.phase === 'sent')) {
+        if (G.phase === 'sent') G.phase = G.turn && G.turn.maxLen === 0 ? 'human-nomove' : 'human-move';
+        render();
+        return;
+      }
+      O.turnId = s.turnId;
+      G.board = persp(s.board);
+      G.log = onlineLog(s);
+      startHumanTurn(s.dice);
+      return;
+    }
+    O.turnId = s.turnId;
+    G.board = persp(s.board);
+    G.turn = null; G.selected = null; G.destMap = null; G.preview = null; G.hint = null; G.notes = [];
+    G.dice = s.dice; G.cpuMoves = [];
+    G.openingDice = s.phase === 'opening' ? [s.opening[me], s.opening[op]] : null;
+    G.phase = s.phase === 'waiting' ? 'waiting' : s.phase === 'opening' ? 'opening' : s.phase === 'over' ? 'over' : myTurn ? 'human-roll' : 'cpu';
+    if (s.phase === 'over') { G.winner = s.winner === me ? HUMAN : CPU; G.winPts = s.pts; G.mars = s.mars; }
+    render();
+  }
+
+  function oppName() {
+    const s = G.online.srv, p = s && s.players[1 - s.you];
+    return p ? p.name : 'противникът';
+  }
+  function onlineLog(s) {
+    const me = s.you, esc2 = ON().esc;
+    const who = (seat) => (seat === me ? 'Вие' : `<b>${esc2(s.players[seat] ? s.players[seat].name : 'Противникът')}</b>`);
+    const out = [];
+    for (const e of s.events) {
+      let type = e.seat === me ? 'you' : e.seat == null ? 'info' : 'cpu', html = '';
+      if (e.k === 'create') html = e.seat === me ? 'Създадохте стаята. Изпратете кода на противника си.' : `${who(e.seat)} създаде стаята.`;
+      else if (e.k === 'join') html = e.seat === me ? 'Влязохте в стаята.' : `${who(e.seat)} влезе в стаята.`;
+      else if (e.k === 'open') { type = 'info'; html = `Хвърляне за начало: вие <b>${e.d[me]}</b>, ${esc2(s.players[1 - me] ? s.players[1 - me].name : 'противникът')} <b>${e.d[1 - me]}</b>.` + (e.d[0] === e.d[1] ? ' Равенство — хвърля се отново.' : e.d[me] > e.d[1 - me] ? ' Вие започвате.' : ''); }
+      else if (e.k === 'roll') continue;
+      else if (e.k === 'move') html = `${who(e.seat)}: ${e.dice[0]}–${e.dice[1]} ${e.moves.length ? E.playText(e.seat === me ? HUMAN : CPU, e.moves) : 'няма възможен ход'}${e.auto ? ' <span class="muted">(автоматично)</span>' : ''}`;
+      else if (e.k === 'timeout') html = `${who(e.seat)} — времето за хода изтече.`;
+      else if (e.k === 'resign') html = `${who(e.seat)} ${e.seat === me ? 'се предадохте' : 'се предаде'}.`;
+      else if (e.k === 'over') { type = 'info'; html = e.seat === me ? `🎉 <b>Победа${e.mars ? ' с марс' : ''}!</b> +${e.pts}` : `${who(e.seat)} печели${e.mars ? ' с марс' : ''} (+${e.pts}).`; }
+      else if (e.k === 'newgame') { type = 'info'; html = `<b>Игра ${e.n}</b> започва. Хвърлете за начало.`; }
+      else continue;
+      out.unshift({ type, html });
+    }
+    return out.slice(0, 60);
+  }
+
+  function onlinePanel() {
+    const O = G.online, s = O.srv, esc2 = ON().esc;
+    let h = '';
+    const tag = `<span class="mode-tag online">Онлайн${O.code ? ' · ' + O.code : ''}</span>`;
+    if (G.phase === 'join' || G.phase === 'join-error' || (G.phase === 'connecting' && !s)) {
+      h += `<div class="panel-head"><div>${tag}</div></div><div class="status">`;
+      if (G.phase === 'join-error') h += `<p class="big">${esc2(O.error)}</p><a class="btn primary" href="#online">Към онлайн лобито</a>`;
+      else if (G.phase === 'join') {
+        h += `<p class="big">Покана за игра в стая <b>${O.code}</b>${O.info && O.info.host ? ` от <b>${esc2(O.info.host)}</b>` : ''}.</p>`;
+        if (O.info) h += `<p class="muted">Време за ход: ${ON().timeText(O.info.settings.moveTime)} · Запис: ${O.info.settings.record ? 'да' : 'не'}</p>`;
+        h += `<form class="join-form" data-form="join-room"><label>Вашето име <input name="name" maxlength="20" autocomplete="nickname" value="${esc2(ON().lastName())}" placeholder="напр. Мария"></label><button class="btn primary" type="submit">Влез в играта</button></form>`;
+        if (O.error) h += `<div class="msg">${esc2(O.error)}</div>`;
+      } else h += '<p class="big">Свързване със стаята…</p>';
+      return h + '</div>';
+    }
+    const me = s.you, op = 1 - me, opp = s.players[op];
+    h += `<div class="panel-head"><div>${tag} <span class="score">Резултат: вие <b>${s.score[me]}</b> : <b>${s.score[op]}</b> ${opp ? esc2(opp.name) : ''}</span></div>
+      <button class="btn small ghost" data-a="leave">Напусни</button></div>`;
+    const conn = O.status === 'open' ? '' : `<div class="msg">Връзката със сървъра прекъсна — свързваме се отново…</div>`;
+    h += conn;
+    h += `<div class="pips">Пипове: <b>вие ${E.pip(G.board, 0)}</b> · ${opp ? esc2(opp.name) : 'противник'} ${E.pip(G.board, 1)} · извадени: ${E.offCount(G.board, 0)} / ${E.offCount(G.board, 1)}</div>`;
+    h += `<div class="players"><span><i class="dot me"></i>Вие — белите</span><span><i class="dot ${opp && opp.online ? 'on' : 'off'}"></i>${opp ? `${esc2(opp.name)} — черните${opp.online ? '' : ' <span class="muted">(офлайн)</span>'}` : '<span class="muted">чакаме противник</span>'}</span></div>`;
+    const clock = O.deadline ? ` <span class="clock" id="clock">${clockText()}</span>` : '';
+    h += '<div class="status">';
+    if (G.phase === 'waiting') {
+      const link = ON().roomLink(O.code);
+      h += `<p class="big">Чакаме противника.</p><p>Изпратете му кода на стаята или линка:</p>
+        <div class="share"><div class="room-code">${O.code}</div><button class="btn small" data-a="copy" data-copy="${O.code}">Копирай кода</button></div>
+        <div class="share"><input class="link" readonly value="${esc2(link)}"><button class="btn small" data-a="copy" data-copy="${esc2(link)}">Копирай линка</button></div>`;
+    } else if (G.phase === 'opening') {
+      const mine = s.opening[me], theirs = s.opening[op];
+      if (mine == null) h += `<p class="big">Хвърлете за начало — по-високият зар започва.</p><button class="btn primary" data-a="opening">🎲 Хвърли за начало</button>`;
+      else h += `<p class="big">Хвърлихте <b>${mine}</b>. Чакаме ${esc2(oppName())}${theirs == null ? '' : ''}…</p>`;
+    } else if (G.phase === 'human-roll') {
+      h += `<p class="big">Ваш ред е.${clock}</p><button class="btn primary" data-a="roll">🎲 Хвърли заровете</button>`;
+      if (G.lastCpu) h += `<p class="muted">Сивите пунктирани стрелки показват последния ход на ${esc2(oppName())}.</p>`;
+    } else if (G.phase === 'human-nomove') {
+      h += `<p class="big">Хвърлихте ${G.dice[0]}–${G.dice[1]}. Няма възможен ход.${clock}</p><button class="btn primary" data-a="pass">Продължи</button>`;
+    } else if (G.phase === 'cpu') {
+      h += `<p class="big">Ход на ${esc2(oppName())}${G.dice ? ` <span class="muted">(${G.dice[0]}–${G.dice[1]})</span>` : ''}…${clock}</p>`;
+    } else if (G.phase === 'sent') {
+      h += '<p class="big">Изпращане на хода…</p>';
+    } else if (G.phase === 'over') {
+      h += `<p class="big">${G.winner === HUMAN ? '🎉 Вие печелите' : esc2(oppName()) + ' печели'}${G.mars ? ' с марс' : ''} (+${G.winPts}).</p>`;
+      if (s.rematch[me]) h += `<p>Поискахте реванш. Чакаме ${esc2(oppName())}…</p>`;
+      else h += `<button class="btn primary" data-a="rematch">↻ Реванш</button>${s.rematch[op] ? ` <span class="muted">${esc2(oppName())} иска реванш.</span>` : ''}`;
+      if (s.settings.record) h += `<p class="muted">Записани ходове: ${s.recorded}. Анализът на играта ще бъде добавен скоро.</p>`;
+    } else if (G.phase === 'human-move') {
+      const n = needed();
+      const remTxt = G.turn.rem.length ? G.turn.rem.join(', ') : '—';
+      h += `<p class="big">Хвърлихте <b>${G.dice[0]}–${G.dice[1]}</b>. ${n > 0 ? `Остават числа: <b>${remTxt}</b>.` : 'Ходът е завършен.'}${clock}</p>`;
+      if (G.turn.moves.length) h += `<p>Изиграно досега: <b>${E.playText(HUMAN, G.turn.moves)}</b></p>`;
+      h += '<div class="btns">';
+      if (n <= 0) h += `<button class="btn primary" data-a="confirm">✔ Потвърди хода</button>`;
+      h += `<button class="btn" data-a="undo" ${G.turn.moves.length ? '' : 'disabled'}>↶ Върни</button>`;
+      h += `<button class="btn" data-a="undoall" ${G.turn.moves.length > 1 ? '' : 'disabled'}>Върни всичко</button>`;
+      h += '</div>';
+      if (n > 0 && G.selected === null) h += `<p class="muted">Кликнете върху пул с жълт кръг, за да видите къде може да отиде.</p>`;
+    }
+    if (G.msg) h += `<div class="msg">${G.msg}</div>`;
+    h += '</div>';
+    h += `<div class="room-info muted">Време за ход: ${ON().timeText(s.settings.moveTime)} · Запис на играта: ${s.settings.record ? 'включен' : 'изключен'}${s.phase !== 'waiting' && s.phase !== 'over' ? ' · <button class="link-btn" data-a="resign">Предай се</button>' : ''}</div>`;
+    h += `<div class="card log"><h4>Ходове</h4>${G.log.map((e) => `<div class="log-${e.type}">${e.html}</div>`).join('')}</div>`;
+    return h;
+  }
+
+  function onlineAction(a, el) {
+    const O = G.online;
+    if (a === 'opening' || a === 'roll') { if (!O.conn.send({ t: 'roll' })) G.msg = 'Няма връзка със сървъра.'; render(); return true; }
+    if (a === 'rematch') { O.conn.send({ t: 'rematch' }); return true; }
+    if (a === 'leave') { location.hash = 'online'; return true; }
+    if (a === 'resign') {
+      if (G.confirmResign) { G.confirmResign = false; O.conn.send({ t: 'resign' }); }
+      else { G.confirmResign = true; G.msg = 'Сигурни ли сте? Натиснете „Предай се“ още веднъж, за да потвърдите.'; render(); setTimeout(() => { if (G && G.confirmResign) { G.confirmResign = false; G.msg = null; render(); } }, 5000); }
+      return true;
+    }
+    if (a === 'copy') {
+      const txt = el.dataset.copy;
+      const done = () => { el.textContent = '✔ Копирано'; setTimeout(() => render(), 1500); };
+      const fallback = () => { const inp = el.parentElement.querySelector('input'); if (inp) { inp.select(); } else { const r = document.createRange(); r.selectNodeContents(el.parentElement.querySelector('.room-code')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); } };
+      try { navigator.clipboard.writeText(txt).then(done, fallback); } catch (e) { fallback(); }
+      return true;
+    }
+    return false;
+  }
+
   // ---------------- изглед ----------------
   function diceView() {
-    if (G.phase === 'opening' && G.openingDice) return { dice: [{ v: G.openingDice[0], p: 0 }, { v: G.openingDice[1], p: 1 }], side: 'right' };
+    if (G.phase === 'opening' && G.openingDice) return { dice: [{ v: G.openingDice[0], p: 0 }, { v: G.openingDice[1], p: 1 }].filter((d) => d.v != null), side: 'right' };
     if (!G.dice || G.phase === 'opening' || G.phase === 'human-roll' || G.phase === 'over') return { dice: [], side: 'right' };
     if (G.phase === 'cpu') {
       const d = G.dice, dbl = d[0] === d[1];
@@ -372,6 +600,7 @@
   }
 
   function panelHtml() {
+    if (G.online) return onlinePanel();
     let h = '';
     const sc = score[G.mode];
     h += `<div class="panel-head"><div><span class="mode-tag ${G.training ? 'train' : 'game'}">${G.training ? 'Тренировка' : 'Игра'}</span> <span class="score">Резултат: вие <b>${sc.you}</b> : <b>${sc.cpu}</b> компютър</span></div>
@@ -495,6 +724,7 @@
     const el = e.target.closest('[data-a]');
     if (!el) return;
     const a = el.dataset.a;
+    if (G.online && onlineAction(a, el)) return;
     if (a === 'new') { newGame(G.mode); render(); }
     else if (a === 'opening') openingRoll();
     else if (a === 'roll') { G.lastCpuKeep = true; SND.dice(); startHumanTurn([rollDie(), rollDie()]); }
@@ -515,6 +745,18 @@
       render();
     } else if (a === 'play-pinned') { if (G.pinPlay) commitPath(G.pinPlay.moves); }
     else if (a === 'toggle-all') { G.showAll = !G.showAll; render(); }
+  }
+  function onPanelSubmit(e) {
+    const f = e.target.closest('form[data-form="join-room"]');
+    if (!f || !G || !G.online) return;
+    e.preventDefault();
+    const name = String(new FormData(f).get('name') || '').trim().slice(0, 20);
+    ON().rememberName(name);
+    const seat = { token: ON().newToken(), name };
+    ON().saveSeat(G.online.code, seat.token, name);
+    G.phase = 'connecting';
+    openConn(seat);
+    render();
   }
   function onPanelOver(e) {
     if (!G || !G.training || G.phase !== 'human-move' || G.selected !== null) return;
@@ -585,6 +827,8 @@
     });
     $('#panel').addEventListener('click', onPanelClick);
     $('#panel').addEventListener('mouseover', onPanelOver);
+    $('#panel').addEventListener('submit', onPanelSubmit);
+    if (!window.TablaOnline || !window.TablaOnline.available) document.querySelectorAll('[data-online]').forEach((el) => { el.hidden = true; });
     initSettings();
     document.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => {
       const n = b.dataset.nav;

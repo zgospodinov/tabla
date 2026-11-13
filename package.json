@@ -1,0 +1,14 @@
+{
+  "name": "tabla",
+  "private": true,
+  "description": "Школа по табла — обучение, игра срещу компютъра и онлайн игра за двама",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node tests/engine.test.js",
+    "build:artifact": "node build-artifact.js"
+  },
+  "devDependencies": {
+    "wrangler": "4.162.0"
+  }
+}
