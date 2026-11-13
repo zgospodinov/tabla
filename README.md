@@ -2,7 +2,7 @@
 
 Уеб приложение за обикновена табла (backgammon): срещу компютъра или онлайн срещу приятел. Без външни библиотеки и без build стъпка за самото приложение.
 
-Онлайн: **https://tabla.zdravko-gospodinov.workers.dev**
+Онлайн: **https://tabla.gospodinov.dev**
 
 ## Стартиране
 
@@ -61,6 +61,6 @@ npm run dev
 
 Единичният файл за claude.ai артефакта се сглобява с `node build-artifact.js` → `dist/tabla.html`. В него онлайн режимът е скрит.
 
-Качване в Cloudflare: `npm run deploy`.
+Качване в Cloudflare: `npm run deploy`. Приложението е достъпно само на `tabla.gospodinov.dev`: адресът `*.workers.dev` и preview адресите са изключени в `wrangler.jsonc`.
 
 Бъдещи задачи: [ROADMAP.md](ROADMAP.md).
