@@ -244,3 +244,35 @@ body.fs .panel { max-height: calc(100dvh - 16px); }
 .pick { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px 8px; margin: 0; display: flex; gap: 6px 18px; flex-wrap: wrap; }
 .pick legend { font-weight: 600; font-size: .95rem; padding: 0 4px; }
 .lobby-card .pick label { flex-direction: row; align-items: center; gap: 6px; font-weight: 400; }
+
+/* телефон в хоризонтално положение (landscape): ниският екран определя размера на дъската.
+   Менюто е на един ред, а дъската и панелът са един до друг. */
+@media (orientation: landscape) and (max-height: 560px) {
+  :root { --hdr: 44px; }
+  .top { padding-block: 4px; gap: 8px; flex-wrap: nowrap; min-height: var(--hdr); }
+  .logo { font-size: 1.05rem; white-space: nowrap; }
+  .logo span, .gear span { display: none; }
+  .nav { flex-wrap: nowrap; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+  .nav button { padding: 4px 8px; font-size: .9rem; white-space: nowrap; }
+  .play, body.fs .play { grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding-block: 6px; align-items: start; }
+  .board-wrap, .strat-play .board-wrap { position: sticky; top: calc(var(--hdr) + 6px); width: calc((100dvh - var(--hdr) - 12px) * 1.394); max-width: calc(100vw - 260px); }
+  /* в „Стратегии“ над дъската има ред с табове (--tabs), а под нея — бутоните (≈ 58px) */
+  .strat-top { --tabs: 38px; padding-block: 4px 0; height: var(--tabs); }
+  .strat-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 4px; }
+  .strat-tabs a { white-space: nowrap; padding: 3px 9px; font-size: .85rem; }
+  .strat-play { padding-top: 4px; }
+  .strat-play .board-wrap { width: calc((100dvh - var(--hdr) - 38px - 64px) * 1.394); }
+  .panel, body.fs .panel { max-height: calc(100dvh - var(--hdr) - 12px); overflow-y: auto; font-size: .92rem; }
+  ol.timeline { max-height: 40dvh; }
+  .strat-controls { margin-top: 6px; gap: 6px; }
+  .strat-controls .btn { min-height: 34px; min-width: 38px; padding: 4px 10px; white-space: nowrap; }
+  .strat-controls { flex-wrap: nowrap; }
+  .strat-controls .lbl { display: none; }
+  .strat-controls .speed { font-size: 0; }
+  .strat-controls select { font-size: .85rem; padding: 4px; }
+  .strat-progress { margin-top: 6px; }
+  /* цял екран: менюто е скрито, дъската взима цялата височина */
+  body.fs { --hdr: 0px; }
+  body.fs .board-wrap, body.fs .strat-play .board-wrap { top: 6px; width: calc((100dvh - 12px) * 1.394); max-width: calc(100vw - 240px); }
+  body.fs .strat-play .board-wrap { width: calc((100dvh - 64px) * 1.394); }
+}
