@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Анализ на вашата игра на табла</title>
+<style>
+body{margin:0;padding:0;-webkit-text-size-adjust:100%}table{border-collapse:collapse}img{border:0;display:block}
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#F6F1E7;font-family:Arial, Helvetica, sans-serif;color:#2A2118;">
+<div style="display:none;max-height:0;overflow:hidden;">Точност, най-скъпите ходове с по-добрия вариант и съвети за следващата игра.</div>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center" style="padding-top:0px;padding-right:10px;padding-bottom:0px;padding-left:10px;">
+<table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;width:100%;background-color:#FFFAF0;">
+<tr><td style="padding:20px 28px 20px 28px;background-color:#3B2414;color:#F6E7C8;font-size:20px;font-weight:bold;">&#127922; Табла <span style="font-size:14px;font-weight:normal;color:#D9C29A;">учи и играй</span></td></tr>
+<tr><td style="padding:12px 28px 12px 28px;background-color:#FCEBD9;border-bottom:1px solid #E4D7BF;font-size:13px;line-height:19px;color:#7A3B1E;"><b>Не отговаряйте на това писмо.</b> То е изпратено автоматично от адрес, който не приема писма.</td></tr>
+<tr><td style="padding:28px 28px 8px 28px;">
+<h1 style="margin:0 0 12px 0;font-size:24px;line-height:30px;color:#2A2118;">Анализ на вашата игра</h1>
+<p style="margin:0 0 8px 0;font-size:16px;line-height:24px;">Здравейте{% if params.name %}, {{ params.name }}{% endif %}!</p>
+<p style="margin:0 0 8px 0;font-size:16px;line-height:24px;">Ето личния анализ на онлайн играта{% if params.opponent %} срещу {{ params.opponent }}{% endif %}{% if params.date %} от {{ params.date }}{% endif %}.{% if params.result %} {{ params.result }}{% endif %}</p>
+<p style="margin:0 0 0 0;font-size:16px;line-height:24px;color:#5A4A38;">{{ params.summary | default:"Всеки ваш ход е сравнен с най-добрия ход според двигателя на приложението." }}</p>
+</td></tr>
+<tr><td style="padding:20px 28px 8px 28px;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #E4D7BF;background-color:#FFFFFF;">
+<tr><td align="center" style="padding:18px 12px 6px 12px;font-size:40px;line-height:44px;font-weight:bold;color:#1E6B45;">{{ params.accuracy | default:"—" }}%</td></tr>
+<tr><td align="center" style="padding:0px 12px 16px 12px;font-size:14px;line-height:20px;color:#7A6B58;">точност: дял на ходовете, които са най-добрите или много близо до тях{% if params.scored %} ({{ params.scored }} хода с избор){% endif %}</td></tr>
+<tr><td style="padding:0px 12px 16px 12px;font-size:14px;line-height:22px;color:#2A2118;" align="center">Най-добър: <b>{{ params.best | default:"0" }}</b> &middot; Много добър: <b>{{ params.good | default:"0" }}</b> &middot; Приемлив: <b>{{ params.ok | default:"0" }}</b> &middot; Слаб: <b>{{ params.weak | default:"0" }}</b> &middot; Грешка: <b>{{ params.bad | default:"0" }}</b></td></tr>
+</table>
+</td></tr>
+<tr><td style="padding:20px 28px 0px 28px;"><h2 style="margin:0 0 4px 0;font-size:18px;line-height:24px;color:#8C2F1C;">Ходовете, които струваха най-много</h2><p style="margin:0;font-size:13px;line-height:19px;color:#7A6B58;">Номерът е поредният ваш ход. Точките са по вашата номерация (домът ви е 1–6).</p></td></tr>
+{% for m in params.mistakes %}<tr><td style="padding:12px 28px 0px 28px;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #E4D7BF;background-color:#FFFFFF;">
+<tr><td style="padding:12px 14px 4px 14px;font-size:14px;line-height:20px;color:#7A6B58;">Ход {{ m.n }} &middot; зарове <b style="color:#2A2118;">{{ m.dice }}</b> &middot; {{ m.label }}</td></tr>
+<tr><td style="padding:2px 14px 2px 14px;font-size:15px;line-height:22px;color:#B3261E;">Изиграхте: <b>{{ m.played }}</b>{% if m.imgPlayed %} <span style="font-size:13px;">(червените стрелки)</span>{% endif %}</td></tr>
+{% if m.imgPlayed %}<tr><td style="padding:6px 14px 8px 14px;"><img src="{{ m.imgPlayed }}" width="512" alt="Дъската с вашия ход {{ m.played }}" style="display:block;width:100%;max-width:512px;height:auto;border:0;"></td></tr>{% endif %}
+<tr><td style="padding:2px 14px 2px 14px;font-size:15px;line-height:22px;color:#1E6B45;">По-добре: <b>{{ m.best }}</b>{% if m.imgBest %} <span style="font-size:13px;">(зелените стрелки)</span>{% endif %}</td></tr>
+{% if m.imgBest %}<tr><td style="padding:6px 14px 8px 14px;"><img src="{{ m.imgBest }}" width="512" alt="Дъската с по-добрия ход {{ m.best }}" style="display:block;width:100%;max-width:512px;height:auto;border:0;"></td></tr>{% endif %}
+<tr><td style="padding:4px 14px 12px 14px;font-size:14px;line-height:20px;color:#5A4A38;">{% if m.why %}{{ m.why }} {% endif %}{% if m.bestWhy %}По-добрият ход: {{ m.bestWhy }}{% endif %}</td></tr>
+</table>
+</td></tr>{% empty %}<tr><td style="padding:12px 28px 0px 28px;font-size:15px;line-height:22px;">Нямаше ходове със значителна загуба. Браво!</td></tr>{% endfor %}
+{% if params.strengths %}<tr><td style="padding:24px 28px 0px 28px;"><h2 style="margin:0 0 8px 0;font-size:18px;line-height:24px;color:#8C2F1C;">Какво направихте добре</h2>
+<p style="margin:0;font-size:15px;line-height:23px;">{% for s in params.strengths %}&#10004; {{ s }}<br>{% endfor %}</p></td></tr>{% endif %}
+{% if params.tips %}<tr><td style="padding:24px 28px 0px 28px;"><h2 style="margin:0 0 8px 0;font-size:18px;line-height:24px;color:#8C2F1C;">Препоръки за следващата игра</h2>
+<p style="margin:0;font-size:15px;line-height:23px;">{% for t in params.tips %}&#8250; {{ t }}<br>{% endfor %}</p></td></tr>{% endif %}
+<tr><td align="center" style="padding:28px 28px 28px 28px;">
+<table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td align="center" style="background-color:#1E6B45;padding:12px 26px 12px 26px;border-radius:8px;"><a href="https://tabla.gospodinov.dev" style="color:#FFFFFF;text-decoration:none;font-size:16px;font-weight:bold;">Играйте отново</a></td></tr></table>
+</td></tr>
+<tr><td style="padding:16px 28px 20px 28px;background-color:#EFE6D6;border-top:1px solid #E4D7BF;font-size:12px;line-height:18px;color:#7A6B58;">Получавате това писмо, защото след играта поискахте анализа ѝ. Адресът ви е използван само за това писмо и не е показан на противника.<br><b>Моля, не отговаряйте</b> — noreply.tabla@gospodinov.dev не приема писма.<br>Табла · <a href="https://tabla.gospodinov.dev" style="color:#7A6B58;">tabla.gospodinov.dev</a></td></tr>
+</table>
+</td></tr></table>
+</body>
+</html>

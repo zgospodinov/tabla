@@ -62,6 +62,17 @@ export default {
       return stub(env, code).fetch(new Request('https://room/' + m[2] + url.search, req));
     }
 
+    // Картинки от писмата с анализ (R2). Имената са случайни; съдържат само позиции от играта.
+    const img = p.match(/^\/img\/(a\/[0-9a-f]{32}\/\d{1,3}-(?:played|best)\.png)$/);
+    if (img && (req.method === 'GET' || req.method === 'HEAD')) {
+      const obj = env.IMAGES && (await env.IMAGES.get(img[1]));
+      if (!obj) return new Response('Not found', { status: 404 });
+      return new Response(req.method === 'HEAD' ? null : obj.body, {
+        headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=2592000, immutable', 'X-Content-Type-Options': 'nosniff' },
+      });
+    }
+    if (p.startsWith('/img/')) return new Response('Not found', { status: 404 });
+
     if (p.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     return env.ASSETS.fetch(req);
   },

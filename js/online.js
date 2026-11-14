@@ -57,6 +57,7 @@
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
         if (m.t === 'state') handlers.state(m);
         else if (m.t === 'error') handlers.error(m);
+        else if (m.t === 'mail' && handlers.mail) handlers.mail(m);
       };
       ws.onclose = (ev) => {
         clearInterval(pingT);

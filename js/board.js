@@ -88,6 +88,8 @@
     MIR = !!view.flip;
     let T = ''; // текстове и зарове — рисуват се извън огледалната група, за да не се обръщат
     let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" class="board-svg" role="img" aria-label="Дъска за табла">`;
+    // самостоятелна картинка (PNG за писмата): стиловете не идват от CSS на страницата
+    if (view.standalone) s += `<style>text{font-family:'DejaVu Sans',Arial,sans-serif}.pt-num{fill:#f2dfb8;font-size:15px;font-weight:700}.stack-num{font-size:19px;font-weight:700;fill:#3a2a10}.stack-num.dark{fill:#fff}.center-text{font-size:34px;font-weight:700;fill:#fff6dc;paint-order:stroke;stroke:#4a2a14;stroke-width:5px}.die.used{opacity:.3}.zone-label{fill:#fff3d6;font-size:13px;font-weight:700}</style>`;
     s += `<defs>
       <radialGradient id="chkW${UID}" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#e9dfc4"/></radialGradient>
       <radialGradient id="chkB${UID}" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#5a5a5a"/><stop offset="100%" stop-color="#151515"/></radialGradient>
@@ -209,5 +211,15 @@
     return s + '</svg>';
   }
 
-  root.TablaBoard = { svg, arrowsForPlay, toH };
-})(window);
+  /** Вариант за PNG картинки: без преливания (PNG файлът става в пъти по-малък). */
+  function svgFlat(view) {
+    return svg(Object.assign({}, view, { standalone: true }))
+      .replace(/url(#woodw+)/g, '#d9b378')
+      .replace(/url(#chkWw+)/g, '#f6efdc')
+      .replace(/url(#chkBw+)/g, '#2b2b2b');
+  }
+
+  const api = { svg, svgFlat, arrowsForPlay, toH };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.TablaBoard = api;
+})(typeof window !== 'undefined' ? window : globalThis);

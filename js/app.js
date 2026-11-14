@@ -362,6 +362,7 @@
         if (m.code === 'rule') { G.msg = m.msg; render(); return; }
         G.phase = 'join-error'; O.error = m.msg; render();
       },
+      mail: (m) => { if (live()) mailResult(m); },
     });
     clearInterval(O.clockT);
     O.clockT = setInterval(updateClock, 500);
@@ -432,6 +433,63 @@
     G.phase = s.phase === 'waiting' ? 'waiting' : s.phase === 'opening' ? 'opening' : s.phase === 'over' ? 'over' : myTurn ? 'human-roll' : 'cpu';
     if (s.phase === 'over') { G.winner = s.winner === me ? HUMAN : CPU; G.winPts = s.pts; G.mars = s.mars; }
     render();
+    if (s.phase === 'over' && s.canMail && !s.mailed && !mailAsked(O.code, s.game)) openMailDialog(O.code, s.game);
+    // ако отговорът се е изгубил (напр. прекъсната връзка), състоянието от сървъра пак казва, че е изпратено
+    if (s.mailed && mailDlg && mailDlg.dataset.sending) mailResult({ ok: true, msg: 'Анализът е изпратен.' });
+    if (s.phase !== 'over') closeMailDialog();
+  }
+
+  // ---------- диалог за анализ по имейл (след края на онлайн игра) ----------
+  // Питаме веднъж за всяка игра; отказът се помни само за този раздел.
+  const mailKey = (code, game) => `tabla-mail-${code}-${game}`;
+  function mailAsked(code, game) { try { return !!sessionStorage.getItem(mailKey(code, game)); } catch (e) { return false; } }
+  function markMailAsked(code, game) { try { sessionStorage.setItem(mailKey(code, game), '1'); } catch (e) { /* няма хранилище */ } }
+  let mailDlg = null;
+  function closeMailDialog() { if (mailDlg) { mailDlg.remove(); mailDlg = null; } }
+  function openMailDialog(code, game) {
+    if (mailDlg) return;
+    const el = document.createElement('div');
+    el.className = 'modal-back';
+    el.innerHTML = `<form class="modal card" role="dialog" aria-modal="true" aria-labelledby="mail-title" novalidate>
+      <h2 id="mail-title">Искате ли анализ на играта си?</h2>
+      <p>Ще ви изпратим личен анализ: колко точно играхте, кои ходове струваха най-много и какъв беше по-добрият ход, плюс съвети за следващата игра.</p>
+      <label>Имейл адрес <input type="email" name="email" autocomplete="email" inputmode="email" maxlength="254" placeholder="vie@primer.bg" required></label>
+      <p class="muted small">Адресът е нужен само за да изпратим това писмо. Не го записваме в приложението и не го показваме на противника. Писмото идва от noreply.tabla@gospodinov.dev — не отговаряйте на него.</p>
+      <div class="msg" hidden></div>
+      <div class="btns"><button class="btn primary" type="submit">Изпрати</button><button class="btn ghost" type="button" data-x>Откажи</button></div>
+    </form>`;
+    document.body.appendChild(el);
+    mailDlg = el;
+    const form = el.querySelector('form'), input = form.email, msg = form.querySelector('.msg'), send = form.querySelector('[type=submit]');
+    const cancel = () => { markMailAsked(code, game); closeMailDialog(); };
+    el.querySelector('[data-x]').addEventListener('click', cancel);
+    el.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancel(); });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const email = input.value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) { msg.hidden = false; msg.textContent = 'Въведете валиден имейл адрес.'; input.focus(); return; }
+      if (!G.online || !G.online.conn.send({ t: 'mail', email })) { msg.hidden = false; msg.textContent = 'Няма връзка със сървъра.'; return; }
+      send.disabled = true; msg.hidden = false; msg.textContent = 'Изпращаме…';
+      el.dataset.sending = '1';
+      clearTimeout(el.waitT);
+      el.waitT = setTimeout(() => {
+        if (mailDlg !== el || !el.dataset.sending) return;
+        delete el.dataset.sending; send.disabled = false; msg.textContent = 'Няма отговор от сървъра. Опитайте отново.';
+      }, 15000);
+    });
+    setTimeout(() => input.focus(), 0);
+  }
+  function mailResult(m) {
+    if (!mailDlg) return;
+    delete mailDlg.dataset.sending; clearTimeout(mailDlg.waitT);
+    const form = mailDlg.querySelector('form'), msg = form.querySelector('.msg');
+    msg.hidden = false; msg.textContent = m.msg || '';
+    if (!m.ok) { form.querySelector('[type=submit]').disabled = false; return; }
+    const s = G.online && G.online.srv;
+    if (s) markMailAsked(G.online.code, s.game);
+    form.querySelector('label').remove();
+    form.querySelector('.btns').innerHTML = '<button class="btn primary" type="button" data-x>Затвори</button>';
+    form.querySelector('[data-x]').addEventListener('click', closeMailDialog);
   }
 
   function oppName() {
@@ -508,7 +566,8 @@
       h += `<p class="big">${G.winner === HUMAN ? '🎉 Вие печелите' : esc2(oppName()) + ' печели'}${G.mars ? ' с марс' : ''} (+${G.winPts}).</p>`;
       if (s.rematch[me]) h += `<p>Поискахте реванш. Чакаме ${esc2(oppName())}…</p>`;
       else h += `<button class="btn primary" data-a="rematch">↻ Реванш</button>${s.rematch[op] ? ` <span class="muted">${esc2(oppName())} иска реванш.</span>` : ''}`;
-      if (s.settings.record) h += `<p class="muted">Записани ходове: ${s.recorded}. Анализът на играта ще бъде добавен скоро.</p>`;
+      if (s.mailed) h += `<p class="muted">Анализът на тази игра е изпратен на имейла ви.</p>`;
+      else if (s.canMail) h += `<p><button class="btn small" data-a="mail">📧 Анализ на играта по имейл</button></p>`;
     } else if (G.phase === 'human-move') {
       const n = needed();
       const remTxt = G.turn.rem.length ? G.turn.rem.join(', ') : '—';
@@ -532,6 +591,7 @@
     const O = G.online;
     if (a === 'opening' || a === 'roll') { if (!O.conn.send({ t: 'roll' })) G.msg = 'Няма връзка със сървъра.'; render(); return true; }
     if (a === 'rematch') { O.conn.send({ t: 'rematch' }); return true; }
+    if (a === 'mail') { if (O.srv) openMailDialog(O.code, O.srv.game); return true; }
     if (a === 'leave') { location.hash = 'online'; return true; }
     if (a === 'resign') {
       if (G.confirmResign) { G.confirmResign = false; O.conn.send({ t: 'resign' }); }

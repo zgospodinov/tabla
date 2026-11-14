@@ -15,3 +15,5 @@ wrangler.jsonc
 *.md
 serve.js
 build-artifact.js
+email
+.dev.vars

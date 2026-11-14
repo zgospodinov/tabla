@@ -3,6 +3,8 @@
  * с двигателя от js/engine.js и следи времето за ход. */
 import { DurableObject } from 'cloudflare:workers';
 import E from '../js/engine.js';
+import A from '../js/analysis.js';
+import { boardSvg, toPng, PLAYED_COLOR, BEST_COLOR } from './render.js';
 
 const MOVE_TIMES = [0, 30, 60, 120, 300];          // секунди, 0 = без ограничение
 const IDLE_TTL = 48 * 3600 * 1000;                 // празна/неактивна стая се изтрива след 48 часа
@@ -94,6 +96,7 @@ export class Room extends DurableObject {
     if (!att || !this.g) return;
     let msg;
     try { msg = JSON.parse(raw); } catch (e) { return; }
+    if (msg && msg.t === 'mail') { await this.mail(ws, att.seat, msg); return; }
     const err = this.handle(att.seat, msg || {});
     if (err) { ws.send(JSON.stringify({ t: 'error', code: 'rule', msg: err })); this.sendState(ws); return; }
     this.g.active = Date.now();
@@ -269,7 +272,96 @@ export class Room extends DurableObject {
       opening: g.opening, deadline: g.deadline, lastMove: g.lastMove, events: g.events.slice(-60),
       score: g.score, winner: g.winner, pts: g.pts, mars: g.mars, rematch: g.rematch, game: g.game,
       recorded: g.record.length,
+      // анализ по имейл: само за своето място и само за току-що завършената игра
+      canMail: this.mailReady() && g.phase === 'over' && g.settings.record && g.record.some((r) => r.game === g.game && r.seat === seat),
+      mailed: !!(g.mailed && g.mailed[g.game + ':' + seat]),
     };
+  }
+
+  // ---------------- анализ по имейл ----------------
+  /** Изпращането е настроено: API ключ (secret) и номер на шаблона в Brevo, или пробен режим локално. */
+  mailReady() {
+    const env = this.env || {};
+    return !!(env.BREVO_DRY_RUN || (env.BREVO_API_KEY && env.BREVO_TEMPLATE_ID));
+  }
+  /** Рисува „Вашият ход“ и „По-добре“ за всяка грешка, качва ги в R2 и добавя адресите им към параметрите на писмото. */
+  async addImages(out, mistakes, seat) {
+    const env = this.env || {};
+    if (!env.IMAGES || !env.PUBLIC_URL || !mistakes.length) return;
+    const g = this.g;
+    const other = (c) => (c === 'white' ? 'black' : 'white');
+    const c0 = g.settings.color || 'white', side0 = g.settings.side || 'right';
+    const mine = seat === 0 ? c0 : other(c0);
+    const side = seat === 0 ? side0 : side0 === 'right' ? 'left' : 'right';
+    const look = { colors: [mine, other(mine)], flip: side === 'left' };
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (x) => x.toString(16).padStart(2, '0')).join('');
+    const base = env.PUBLIC_URL.replace(/\/+$/, '') + '/img/a/' + id + '/';
+    for (let k = 0; k < mistakes.length; k++) {
+      const m = mistakes[k];
+      for (const [kind, moves, color, field] of [['played', m.playedMoves, PLAYED_COLOR, 'imgPlayed'], ['best', m.bestMoves, BEST_COLOR, 'imgBest']]) {
+        const png = await toPng(boardSvg(m.before, m.diceArr, moves, color, look), 640);
+        const name = m.n + '-' + kind + '.png';
+        await env.IMAGES.put('a/' + id + '/' + name, png, { httpMetadata: { contentType: 'image/png' } });
+        out[k][field] = base + name;
+      }
+    }
+  }
+
+  /** Изпраща личния анализ на играча seat. Адресът не се записва никъде — използва се само за това писмо. */
+  async mail(ws, seat, msg) {
+    const g = this.g;
+    const reply = (ok, text) => { try { ws.send(JSON.stringify({ t: 'mail', ok, msg: text })); } catch (e) { /* затворена връзка */ } };
+    const email = String(msg.email || '').trim();
+    if (g.phase !== 'over') return reply(false, 'Анализът се изпраща след края на играта.');
+    if (!g.settings.record) return reply(false, 'В тази стая играта не се записва, затова няма анализ.');
+    if (email.length > 254 || !/^[^\s@<>"'(),;:]+@[^\s@<>"'(),;:]+\.[a-z]{2,}$/i.test(email)) return reply(false, 'Въведете валиден имейл адрес.');
+    g.mailed = g.mailed || {};
+    const key = g.game + ':' + seat;
+    if (g.mailed[key]) return reply(false, 'Анализът на тази игра вече е изпратен.');
+    const env = this.env || {};
+    if (!this.mailReady()) return reply(false, 'Изпращането по имейл още не е настроено.');
+
+    const a = A.analyzeGame(E, g.record, seat, g.game);
+    const me = g.seats[seat], opp = g.seats[1 - seat];
+    const won = g.winner === seat;
+    let date;
+    // дата без „г.“ — в писмото след нея следва точка
+    try {
+      const pt = Object.fromEntries(new Intl.DateTimeFormat('bg-BG', { timeZone: 'Europe/Sofia', day: 'numeric', month: 'long', year: 'numeric' }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+      date = `${pt.day} ${pt.month} ${pt.year}`;
+    } catch (e) { date = new Date().toISOString().slice(0, 10); }
+    const params = {
+      name: me ? me.name : '', opponent: opp ? opp.name : '', date,
+      result: won ? `Спечелихте${g.mars ? ' с марс' : ''} (+${g.pts}).` : `Този път ${opp ? opp.name : 'противникът'} спечели${g.mars ? ' с марс' : ''}.`,
+      summary: a.summary, accuracy: String(a.accuracy), scored: String(a.scored),
+      best: String(a.counts.best), good: String(a.counts.good), ok: String(a.counts.ok), weak: String(a.counts.weak), bad: String(a.counts.bad),
+      mistakes: a.mistakes.map((m) => ({ n: String(m.n), dice: m.dice, played: m.played, best: m.best, label: m.label, why: m.why, bestWhy: m.bestWhy })),
+      strengths: a.strengths, tips: a.tips,
+    };
+    // отбелязваме преди изпращането, за да не тръгнат две писма при двоен клик
+    g.mailed[key] = true;
+    await this.save();
+    try {
+      // картинки на дъската за всеки обяснен ход; без тях писмото пак тръгва (текстът остава)
+      try { await this.addImages(params.mistakes, a.mistakes, seat); } catch (e) { console.log('images failed', String(e && e.message)); }
+      if (env.BREVO_DRY_RUN) {
+        console.log('BREVO_DRY_RUN', JSON.stringify(params));
+      } else {
+        const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: { 'api-key': env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
+          body: JSON.stringify({ templateId: Number(env.BREVO_TEMPLATE_ID), to: [{ email, name: params.name || undefined }], params, tags: ['tabla-analysis'] }),
+        });
+        if (!r.ok) throw new Error('Brevo ' + r.status + ' ' + (await r.text()).slice(0, 200));
+      }
+    } catch (e) {
+      console.log('mail failed', String(e && e.message));
+      delete g.mailed[key];
+      await this.save();
+      return reply(false, 'Писмото не можа да бъде изпратено. Опитайте отново след малко.');
+    }
+    reply(true, 'Изпратихме анализа на ' + email + '.');
+    this.broadcast();
   }
   sendState(ws, skip) {
     const att = ws.deserializeAttachment();

@@ -285,3 +285,12 @@ body.fs .panel { max-height: calc(100dvh - 16px); }
 .die-chip { display: inline-block; width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid #8a7a55; vertical-align: middle; }
 .die-chip.red { background: #c62828; border-color: #7f1010; }
 .die-chip.white { background: #fffdf6; }
+
+/* Модален диалог (анализ по имейл след онлайн игра) */
+.modal-back { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(20, 14, 8, .55); }
+.modal { width: min(460px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; display: grid; gap: 10px; box-shadow: 0 18px 50px rgba(0, 0, 0, .35); }
+.modal h2 { margin: 0; }
+.modal p { margin: 0; }
+.modal label { display: grid; gap: 4px; font-weight: 600; }
+.modal input[type=email] { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
+.modal .btns { display: flex; gap: 8px; flex-wrap: wrap; }
