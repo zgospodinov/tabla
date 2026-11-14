@@ -276,3 +276,12 @@ body.fs .panel { max-height: calc(100dvh - 16px); }
   body.fs .board-wrap, body.fs .strat-play .board-wrap { top: 6px; width: calc((100dvh - 12px) * 1.394); max-width: calc(100vw - 240px); }
   body.fs .strat-play .board-wrap { width: calc((100dvh - 64px) * 1.394); }
 }
+
+/* Хвърляне за начало и цветове на заровете (бели пулове — червени зарове, черни — бели) */
+.opening-step { display: grid; gap: 6px; padding: 10px 12px; border: 2px dashed var(--accent, #c9a227); border-radius: 10px; }
+.opening-step .step-no { margin: 0; font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.opening-step .big { margin: 0; }
+.dice-key { margin: 0; font-size: .9rem; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.die-chip { display: inline-block; width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid #8a7a55; vertical-align: middle; }
+.die-chip.red { background: #c62828; border-color: #7f1010; }
+.die-chip.white { background: #fffdf6; }

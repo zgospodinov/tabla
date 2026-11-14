@@ -53,11 +53,12 @@
   }
 
   const PIPS = { 1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]], 4: [[-1, -1], [1, -1], [-1, 1], [1, 1]], 5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]], 6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]] };
-  function dieSvg(x, y, v, dark, used, size) {
+  // Всеки играч хвърля своя чифт: белите пулове — с червени зарове, черните — с бели.
+  function dieSvg(x, y, v, red, used, size) {
     const s = size, r = s * 0.09, off = s * 0.26;
-    let g = `<g class="die${used ? ' used' : ''}" transform="translate(${x},${y})">`;
-    g += `<rect x="${-s / 2}" y="${-s / 2}" width="${s}" height="${s}" rx="${s * 0.18}" fill="${dark ? '#262626' : '#fffdf6'}" stroke="${dark ? '#000' : '#8a7a55'}" stroke-width="2"/>`;
-    for (const [dx, dy] of PIPS[v]) g += `<circle cx="${dx * off}" cy="${dy * off}" r="${r}" fill="${dark ? '#fafafa' : '#222'}"/>`;
+    let g = `<g class="die ${red ? 'red' : 'white'}${used ? ' used' : ''}" transform="translate(${x},${y})">`;
+    g += `<rect x="${-s / 2}" y="${-s / 2}" width="${s}" height="${s}" rx="${s * 0.18}" fill="${red ? '#c62828' : '#fffdf6'}" stroke="${red ? '#7f1010' : '#8a7a55'}" stroke-width="2"/>`;
+    for (const [dx, dy] of PIPS[v]) g += `<circle cx="${dx * off}" cy="${dy * off}" r="${r}" fill="${red ? '#fffaf0' : '#222'}"/>`;
     return g + '</g>';
   }
 
@@ -180,12 +181,16 @@
     s += '</g>';
     // зарове
     if (view.dice && view.dice.length) {
-      const n = view.dice.length, size = n > 2 ? 40 : 50, gap = size + 12;
-      const cx = view.diceSide === 'left' ? 210 : 630;
-      view.dice.forEach((d, k) => {
-        const x = cx + (k - (n - 1) / 2) * gap;
-        T += dieSvg(mx(x), MID, d.v, !isW(d.p), d.used, size);
-      });
+      // d.side позволява зарове от двете страни (хвърлянето за начало: всеки зар в своята половина)
+      for (const side of ['left', 'right']) {
+        const ds = view.dice.filter((d) => (d.side || view.diceSide || 'right') === side);
+        const n = ds.length, size = n > 2 ? 40 : 50, gap = size + 12;
+        const cx = side === 'left' ? 210 : 630;
+        ds.forEach((d, k) => {
+          const x = cx + (k - (n - 1) / 2) * gap;
+          T += dieSvg(mx(x), MID, d.v, isW(d.p), d.used, size);
+        });
+      }
     }
     if (view.centerText) T += `<text x="${mx(view.diceSide === 'left' ? 630 : 210)}" y="${MID + 7}" text-anchor="middle" class="center-text">${view.centerText}</text>`;
     s += T;

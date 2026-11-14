@@ -116,13 +116,20 @@
       render();
       return;
     }
-    if (a > c) {
-      addLog(G.training ? 'rule' : 'info', `Вие хвърлихте <b>${a}</b>, компютърът — <b>${c}</b>. Вие започвате и играете ${a} и ${c}.`);
-      startHumanTurn([a, c]);
-    } else {
-      addLog(G.training ? 'rule' : 'info', `Компютърът хвърли <b>${c}</b>, вие — <b>${a}</b>. Компютърът започва и играе ${c} и ${a}.`);
-      startCpuTurn([c, a]);
-    }
+    // Резултатът остава на дъската, докато играчът не натисне „Започни“ — началото е отделна, ясна стъпка.
+    G.phase = 'opening-done';
+    G.openWinner = a > c ? HUMAN : CPU;
+    if (a > c) addLog(G.training ? 'rule' : 'info', `Вие хвърлихте <b>${a}</b>, компютърът — <b>${c}</b>. Вие започвате и играете ${a} и ${c}.`);
+    else addLog(G.training ? 'rule' : 'info', `Компютърът хвърли <b>${c}</b>, вие — <b>${a}</b>. Компютърът започва и играе ${c} и ${a}.`);
+    render();
+  }
+
+  function beginGame() {
+    if (G.phase !== 'opening-done') return;
+    const [a, c] = G.openingDice;
+    G.openingDice = null;
+    if (G.openWinner === HUMAN) startHumanTurn([a, c]);
+    else startCpuTurn([c, a]);
   }
 
   function startHumanTurn(dice) {
@@ -174,6 +181,7 @@
   function onBoardClick(t) {
     if (!G) return;
     if (G.phase === 'opening') { G.msg = 'Натиснете „Хвърли за начало“.'; render(); return; }
+    if (G.phase === 'opening-done') { G.msg = 'Натиснете „Започни играта“.'; render(); return; }
     if (G.phase === 'human-roll') { G.msg = 'Първо хвърлете заровете.'; render(); return; }
     if (G.phase !== 'human-move') return;
     G.msg = null;
@@ -485,6 +493,8 @@
       const mine = s.opening[me], theirs = s.opening[op];
       if (mine == null) h += `<p class="big">Хвърлете за начало — по-високият зар започва.</p><button class="btn primary" data-a="opening">🎲 Хвърли за начало</button>`;
       else h += `<p class="big">Хвърлихте <b>${mine}</b>. Чакаме ${esc2(oppName())}${theirs == null ? '' : ''}…</p>`;
+      const dieOf = (p) => (seatLook().colors[p] === 'white' ? 'red' : 'white');
+      h += `<p class="dice-key"><i class="die-chip ${dieOf(0)}"></i> вашият зар · <i class="die-chip ${dieOf(1)}"></i> зарът на ${esc2(oppName())}</p>`;
     } else if (G.phase === 'human-roll') {
       h += `<p class="big">Ваш ред е.${clock}</p><button class="btn primary" data-a="roll">🎲 Хвърли заровете</button>`;
       if (G.lastCpu) h += `<p class="muted">Сивите пунктирани стрелки показват последния ход на ${esc2(oppName())}.</p>`;
@@ -540,7 +550,8 @@
 
   // ---------------- изглед ----------------
   function diceView() {
-    if (G.phase === 'opening' && G.openingDice) return { dice: [{ v: G.openingDice[0], p: 0 }, { v: G.openingDice[1], p: 1 }].filter((d) => d.v != null), side: 'right' };
+    // хвърляне за начало: вашият зар е във вашата половина (вдясно), на противника — вляво
+    if ((G.phase === 'opening' || G.phase === 'opening-done') && G.openingDice) return { dice: [{ v: G.openingDice[0], p: 0, side: 'right' }, { v: G.openingDice[1], p: 1, side: 'left' }].filter((d) => d.v != null), side: 'right' };
     if (!G.dice || G.phase === 'opening' || G.phase === 'human-roll' || G.phase === 'over') return { dice: [], side: 'right' };
     if (G.phase === 'cpu') {
       const d = G.dice, dbl = d[0] === d[1];
@@ -626,7 +637,18 @@
     // статус и бутони
     h += '<div class="status">';
     if (G.phase === 'opening') {
-      h += `<p class="big">Хвърлете за начало.</p><button class="btn primary" data-a="opening">🎲 Хвърли за начало</button>`;
+      const tie = G.openingDice && G.openingDice[0] === G.openingDice[1];
+      h += `<div class="opening-step"><p class="step-no">Стъпка 1 · Кой започва?</p>`;
+      if (tie) h += `<p class="big">Равенство — и двамата хвърлихте <b>${G.openingDice[0]}</b>. Хвърлете отново.</p>`;
+      else h += `<p class="big">Всеки хвърля по един зар. По-високото число започва и играе двата зара.</p>`;
+      h += `<p class="dice-key"><i class="die-chip red"></i> вашият зар (белите пулове) · <i class="die-chip white"></i> зарът на компютъра (черните)</p>`;
+      h += `<button class="btn primary" data-a="opening">🎲 ${tie ? 'Хвърли отново' : 'Хвърли за начало'}</button></div>`;
+    } else if (G.phase === 'opening-done') {
+      const [a, c] = G.openingDice, you = G.openWinner === HUMAN;
+      h += `<div class="opening-step"><p class="step-no">Стъпка 1 · Кой започва?</p>`;
+      h += `<p class="big">Вие: <b>${a}</b> · Компютърът: <b>${c}</b>.</p>`;
+      h += `<p class="big">${you ? `<b>Вие започвате</b> и играете ${a} и ${c}.` : `<b>Компютърът започва</b> и играе ${c} и ${a}.`}</p>`;
+      h += `<button class="btn primary" data-a="begin">▶ Започни играта</button></div>`;
     } else if (G.phase === 'human-roll') {
       h += `<p class="big">Ваш ред е.</p><button class="btn primary" data-a="roll">🎲 Хвърли заровете</button>`;
       if (G.training && G.lastCpu) h += `<p class="muted">Сивите пунктирани стрелки показват последния ход на компютъра.</p>`;
@@ -743,6 +765,7 @@
     if (G.online && onlineAction(a, el)) return;
     if (a === 'new') { newGame(G.mode); render(); }
     else if (a === 'opening') openingRoll();
+    else if (a === 'begin') beginGame();
     else if (a === 'roll') { G.lastCpuKeep = true; SND.dice(); startHumanTurn([rollDie(), rollDie()]); }
     else if (a === 'pass') endHumanTurn();
     else if (a === 'confirm') endHumanTurn();
@@ -860,7 +883,7 @@
   window.__tabla = {
     state: () => G, settings, render,
     playBest() { const pl = rankedFromHere(); commitPath(pl.length ? pl[0].moves : []); },
-    confirm: () => endHumanTurn(), roll: (d) => startHumanTurn(d), opening: () => openingRoll(),
+    confirm: () => endHumanTurn(), roll: (d) => startHumanTurn(d), opening: () => openingRoll(), begin: () => beginGame(),
   };
   document.addEventListener('DOMContentLoaded', init);
 })();
