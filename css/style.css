@@ -294,3 +294,32 @@ body.fs .panel { max-height: calc(100dvh - 16px); }
 .modal label { display: grid; gap: 4px; font-weight: 600; }
 .modal input[type=email] { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
 .modal .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Диалог след мача: две възможности (анализ сега / по имейл) */
+.modal .choice { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.modal .choice h3 { margin: 0; font-size: 1.02rem; }
+.modal .choice .btn { justify-self: start; }
+
+/* Анализът в приложението */
+body.no-scroll { overflow: hidden; }
+.ana-back { position: fixed; inset: 0; z-index: 60; background: rgba(20, 14, 8, .6); padding: 16px; display: grid; place-items: start center; overflow: hidden; }
+.ana { width: min(980px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; display: grid; gap: 12px; box-shadow: 0 18px 50px rgba(0, 0, 0, .35); outline: none; }
+.ana h2, .ana h3, .ana p, .ana ul { margin: 0; }
+.ana h3 { margin-top: 6px; color: var(--h2, var(--accent)); }
+.ana-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; position: sticky; top: -16px; background: var(--card); padding-block: 4px; z-index: 1; }
+.ana-score { display: flex; gap: 14px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.ana-acc { font-size: 2.4rem; font-weight: 800; color: var(--pro); line-height: 1; }
+.ana-counts { display: flex; flex-wrap: wrap; gap: 6px; }
+.q-chip { padding: 3px 9px; border-radius: 99px; color: #fff; font-size: .88rem; }
+.q-chip.best { background: #2e9e4f; } .q-chip.good { background: #6b9e2e; } .q-chip.ok { background: #c98500; } .q-chip.weak { background: #d35400; } .q-chip.bad { background: #c62828; }
+.ana-move { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.ana-head { color: var(--muted); }
+.ana-boards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ana-boards figure { margin: 0; display: grid; gap: 6px; min-width: 0; }
+.ana-boards figcaption.bad { color: var(--con); }
+.ana-boards figcaption.good { color: var(--pro); }
+.ana-boards .board-svg { box-shadow: none; border-radius: 10px; }
+.ana ul { padding-left: 1.2em; display: grid; gap: 4px; }
+.ana-next { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.ana-next .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 700px) { .ana-boards { grid-template-columns: 1fr; } .ana-back { padding: 8px; } .ana { max-height: calc(100dvh - 16px); } }

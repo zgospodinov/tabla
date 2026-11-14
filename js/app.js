@@ -322,6 +322,7 @@
   // ---------------- онлайн игра ----------------
   const ON = () => window.TablaOnline;
   function leaveOnline() {
+    closeMailDialog(); closeAnalysis();
     if (G && G.online) { G.online.conn && G.online.conn.close(); clearInterval(G.online.clockT); G = null; }
   }
   function startOnline(code) {
@@ -363,6 +364,7 @@
         G.phase = 'join-error'; O.error = m.msg; render();
       },
       mail: (m) => { if (live()) mailResult(m); },
+      analysis: (m) => { if (live()) analysisResult(m); },
     });
     clearInterval(O.clockT);
     O.clockT = setInterval(updateClock, 500);
@@ -433,63 +435,130 @@
     G.phase = s.phase === 'waiting' ? 'waiting' : s.phase === 'opening' ? 'opening' : s.phase === 'over' ? 'over' : myTurn ? 'human-roll' : 'cpu';
     if (s.phase === 'over') { G.winner = s.winner === me ? HUMAN : CPU; G.winPts = s.pts; G.mars = s.mars; }
     render();
-    if (s.phase === 'over' && s.canMail && !s.mailed && !mailAsked(O.code, s.game)) openMailDialog(O.code, s.game);
+    if (s.phase === 'over' && s.canAnalyze && !mailAsked(O.code, s.match)) openMailDialog(O.code, s.match);
     // ако отговорът се е изгубил (напр. прекъсната връзка), състоянието от сървъра пак казва, че е изпратено
     if (s.mailed && mailDlg && mailDlg.dataset.sending) mailResult({ ok: true, msg: 'Анализът е изпратен.' });
-    if (s.phase !== 'over') closeMailDialog();
+    if (s.phase !== 'over') { closeMailDialog(); closeAnalysis(); }
   }
 
-  // ---------- диалог за анализ по имейл (след края на онлайн игра) ----------
-  // Питаме веднъж за всяка игра; отказът се помни само за този раздел.
-  const mailKey = (code, game) => `tabla-mail-${code}-${game}`;
-  function mailAsked(code, game) { try { return !!sessionStorage.getItem(mailKey(code, game)); } catch (e) { return false; } }
-  function markMailAsked(code, game) { try { sessionStorage.setItem(mailKey(code, game), '1'); } catch (e) { /* няма хранилище */ } }
+  // ---------- след края на мача: анализ веднага или по имейл ----------
+  // Питаме веднъж за всеки мач; отказът се помни само за този раздел.
+  const mailKey = (code, match) => `tabla-mail-${code}-m${match}`;
+  function mailAsked(code, match) { try { return !!sessionStorage.getItem(mailKey(code, match)); } catch (e) { return false; } }
+  function markMailAsked(code, match) { try { sessionStorage.setItem(mailKey(code, match), '1'); } catch (e) { /* няма хранилище */ } }
   let mailDlg = null;
   function closeMailDialog() { if (mailDlg) { mailDlg.remove(); mailDlg = null; } }
-  function openMailDialog(code, game) {
-    if (mailDlg) return;
+  function openMailDialog(code, match) {
+    if (mailDlg || anaEl) return;
+    const s = G.online && G.online.srv;
+    const canMail = !!(s && s.canMail && !s.mailed);
     const el = document.createElement('div');
     el.className = 'modal-back';
-    el.innerHTML = `<form class="modal card" role="dialog" aria-modal="true" aria-labelledby="mail-title" novalidate>
+    el.innerHTML = `<div class="modal card" role="dialog" aria-modal="true" aria-labelledby="mail-title">
       <h2 id="mail-title">Искате ли анализ на играта си?</h2>
-      <p>Ще ви изпратим личен анализ: колко точно играхте, кои ходове струваха най-много и какъв беше по-добрият ход, плюс съвети за следващата игра.</p>
-      <label>Имейл адрес <input type="email" name="email" autocomplete="email" inputmode="email" maxlength="254" placeholder="vie@primer.bg" required></label>
-      <p class="muted small">Адресът е нужен само за да изпратим това писмо. Не го записваме в приложението и не го показваме на противника. Писмото идва от noreply.tabla@gospodinov.dev — не отговаряйте на него.</p>
-      <div class="msg" hidden></div>
-      <div class="btns"><button class="btn primary" type="submit">Изпрати</button><button class="btn ghost" type="button" data-x>Откажи</button></div>
-    </form>`;
+      <p>Личен анализ на вашите ходове: колко точно играхте, кои ходове струваха най-много и какъв беше по-добрият ход — нарисуван на дъската, плюс съвети за следващата игра.</p>
+      <section class="choice">
+        <h3>📊 Вижте го сега</h3>
+        <p class="muted small">Отваря се тук, веднага. След това можете просто да затворите раздела или да продължите да играете срещу компютъра или в тренировка.</p>
+        <button class="btn primary" type="button" data-now>Виж анализа</button>
+      </section>
+      ${canMail ? `<form class="choice" novalidate>
+        <h3>📧 По имейл — за по-късно</h3>
+        <label>Имейл адрес <input type="email" name="email" autocomplete="email" inputmode="email" maxlength="254" placeholder="vie@primer.bg" required></label>
+        <p class="muted small">Адресът е нужен само за да изпратим това писмо. Не го записваме в приложението и не го показваме на противника. Писмото идва от noreply.tabla@gospodinov.dev — не отговаряйте на него.</p>
+        <div class="msg" hidden></div>
+        <button class="btn" type="submit">Изпрати</button>
+      </form>` : s && s.mailed ? '<p class="muted">Анализът вече е изпратен на имейла ви.</p>' : ''}
+      <div class="btns"><button class="btn ghost" type="button" data-x>Откажи</button></div>
+    </div>`;
     document.body.appendChild(el);
     mailDlg = el;
-    const form = el.querySelector('form'), input = form.email, msg = form.querySelector('.msg'), send = form.querySelector('[type=submit]');
-    const cancel = () => { markMailAsked(code, game); closeMailDialog(); };
+    const cancel = () => { markMailAsked(code, match); closeMailDialog(); };
     el.querySelector('[data-x]').addEventListener('click', cancel);
     el.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancel(); });
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const email = input.value.trim();
-      if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) { msg.hidden = false; msg.textContent = 'Въведете валиден имейл адрес.'; input.focus(); return; }
-      if (!G.online || !G.online.conn.send({ t: 'mail', email })) { msg.hidden = false; msg.textContent = 'Няма връзка със сървъра.'; return; }
-      send.disabled = true; msg.hidden = false; msg.textContent = 'Изпращаме…';
-      el.dataset.sending = '1';
-      clearTimeout(el.waitT);
-      el.waitT = setTimeout(() => {
-        if (mailDlg !== el || !el.dataset.sending) return;
-        delete el.dataset.sending; send.disabled = false; msg.textContent = 'Няма отговор от сървъра. Опитайте отново.';
-      }, 15000);
-    });
-    setTimeout(() => input.focus(), 0);
+    el.querySelector('[data-now]').addEventListener('click', () => { markMailAsked(code, match); closeMailDialog(); openAnalysis(); });
+    const form = el.querySelector('form');
+    if (form) {
+      const input = form.email, msg = form.querySelector('.msg'), send = form.querySelector('[type=submit]');
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = input.value.trim();
+        if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) { msg.hidden = false; msg.textContent = 'Въведете валиден имейл адрес.'; input.focus(); return; }
+        if (!G.online || !G.online.conn.send({ t: 'mail', email })) { msg.hidden = false; msg.textContent = 'Няма връзка със сървъра.'; return; }
+        send.disabled = true; msg.hidden = false; msg.textContent = 'Изпращаме…';
+        el.dataset.sending = '1';
+        clearTimeout(el.waitT);
+        el.waitT = setTimeout(() => {
+          if (mailDlg !== el || !el.dataset.sending) return;
+          delete el.dataset.sending; send.disabled = false; msg.textContent = 'Няма отговор от сървъра. Опитайте отново.';
+        }, 15000);
+      });
+    }
+    setTimeout(() => el.querySelector('[data-now]').focus(), 0);
   }
   function mailResult(m) {
     if (!mailDlg) return;
     delete mailDlg.dataset.sending; clearTimeout(mailDlg.waitT);
-    const form = mailDlg.querySelector('form'), msg = form.querySelector('.msg');
+    const form = mailDlg.querySelector('form');
+    if (!form) return;
+    const msg = form.querySelector('.msg');
     msg.hidden = false; msg.textContent = m.msg || '';
     if (!m.ok) { form.querySelector('[type=submit]').disabled = false; return; }
     const s = G.online && G.online.srv;
-    if (s) markMailAsked(G.online.code, s.game);
+    if (s) markMailAsked(G.online.code, s.match);
     form.querySelector('label').remove();
-    form.querySelector('.btns').innerHTML = '<button class="btn primary" type="button" data-x>Затвори</button>';
-    form.querySelector('[data-x]').addEventListener('click', closeMailDialog);
+    form.querySelector('[type=submit]').remove();
+    form.querySelector('.muted').remove();
+    mailDlg.querySelector('[data-x]').textContent = 'Затвори';
+  }
+
+  // ---------- анализът в приложението ----------
+  let anaEl = null;
+  function closeAnalysis() { if (anaEl) { anaEl.remove(); anaEl = null; document.body.classList.remove('no-scroll'); } }
+  function openAnalysis() {
+    if (!G || !G.online || !G.online.conn) return;
+    closeAnalysis();
+    anaEl = document.createElement('div');
+    anaEl.className = 'ana-back';
+    anaEl.innerHTML = '<article class="ana card" role="dialog" aria-modal="true" aria-label="Анализ на играта" tabindex="-1"><p class="big">Подготвяме анализа…</p></article>';
+    document.body.appendChild(anaEl);
+    document.body.classList.add('no-scroll');
+    anaEl.addEventListener('click', (e) => {
+      if (e.target.closest('[data-close]')) closeAnalysis();
+      else if (e.target.closest('a[href^="#"]')) closeAnalysis(); // към игра/тренировка: маршрутът сам напуска стаята
+    });
+    anaEl.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAnalysis(); });
+    if (!G.online.conn.send({ t: 'analysis' })) analysisResult({ ok: false, msg: 'Няма връзка със сървъра.' });
+  }
+  function analysisResult(m) {
+    if (!anaEl) return;
+    const box = anaEl.querySelector('.ana'), esc2 = ON().esc;
+    if (!m.ok) { box.innerHTML = `<p class="big">${esc2(m.msg || 'Анализът не е достъпен.')}</p><div class="btns"><button class="btn" data-close>Затвори</button></div>`; return; }
+    const a = m.data, look = a.look;
+    const board = (mi, moves, color) => B.svg({ board: mi.before, colors: look.colors, flip: look.flip, dice: mi.diceArr.map((v) => ({ v, p: 0 })), diceSide: 'right', arrows: B.arrowsForPlay(mi.before, 0, moves, color) });
+    const cats = [['best', 'Най-добър'], ['good', 'Много добър'], ['ok', 'Приемлив'], ['weak', 'Слаб'], ['bad', 'Грешка']];
+    let h = '<header class="ana-top"><h2>Анализ на вашата игра</h2><button class="btn small ghost" data-close>✕ Затвори</button></header>';
+    h += `<p>${esc2(a.result)}${a.opponent ? ` <span class="muted">Противник: ${esc2(a.opponent)}${a.games > 1 ? ` · ${a.games} игри` : ''}.</span>` : ''}</p>`;
+    h += `<div class="ana-score"><div class="ana-acc">${a.accuracy}%</div><div><b>точност</b> — дял на ходовете, които са най-добрите или много близо до тях (${a.scored} хода с избор).<br>${esc2(a.summary)}</div></div>`;
+    h += `<p class="ana-counts">${cats.map(([k, t]) => `<span class="q-chip ${k}">${t}: <b>${a.counts[k]}</b></span>`).join('')}</p>`;
+    h += '<h3>Ходовете, които струваха най-много</h3>';
+    if (!a.mistakes.length) h += '<p>Нямаше ходове със значителна загуба. Браво!</p>';
+    else h += `<p class="muted small">Номерът е поредният ваш ход${a.games > 1 ? ' в съответната игра' : ''}. Точките са по вашата номерация (домът ви е 1–6).</p>`;
+    for (const mi of a.mistakes) {
+      h += `<section class="ana-move"><p class="ana-head">Ход ${esc2(mi.where || mi.n)} · зарове <b>${esc2(mi.dice)}</b> · ${esc2(mi.label)}</p>
+        <div class="ana-boards">
+          <figure><figcaption class="bad">Изиграхте: <b>${esc2(mi.played)}</b> <span class="muted">(червените стрелки)</span></figcaption>${board(mi, mi.playedMoves, '#d32f2f')}</figure>
+          <figure><figcaption class="good">По-добре: <b>${esc2(mi.best)}</b> <span class="muted">(зелените стрелки)</span></figcaption>${board(mi, mi.bestMoves, '#2e9e4f')}</figure>
+        </div>
+        <p>${mi.why ? esc2(mi.why) + ' ' : ''}${mi.bestWhy ? '<b>По-добрият ход:</b> ' + esc2(mi.bestWhy) : ''}</p></section>`;
+    }
+    if (a.strengths.length) h += `<h3>Какво направихте добре</h3><ul>${a.strengths.map((x) => `<li>${esc2(x)}</li>`).join('')}</ul>`;
+    if (a.tips.length) h += `<h3>Препоръки за следващата игра</h3><ul>${a.tips.map((x) => `<li>${esc2(x)}</li>`).join('')}</ul>`;
+    h += `<footer class="ana-next"><p><b>Какво следва?</b> Можете просто да затворите раздела или да продължите да се упражнявате:</p>
+      <div class="btns"><a class="btn primary" href="#game">🏆 Игра срещу компютъра</a><a class="btn" href="#training">🎓 Тренировка</a></div></footer>`;
+    box.innerHTML = h;
+    box.scrollTop = 0;
+    box.focus();
   }
 
   function oppName() {
@@ -510,6 +579,7 @@
       else if (e.k === 'timeout') html = `${who(e.seat)} — времето за хода изтече.`;
       else if (e.k === 'resign') html = `${who(e.seat)} ${e.seat === me ? 'се предадохте' : 'се предаде'}.`;
       else if (e.k === 'over') { type = 'info'; html = e.seat === me ? `🎉 <b>Победа${e.mars ? ' с марс' : ''}!</b> +${e.pts}` : `${who(e.seat)} печели${e.mars ? ' с марс' : ''} (+${e.pts}).`; }
+      else if (e.k === 'matchover') { type = 'info'; html = e.seat === me ? `🏆 <b>Спечелихте мача ${e.score[me]}:${e.score[1 - me]}!</b>` : `🏆 ${who(e.seat)} спечели мача ${e.score[e.seat]}:${e.score[1 - e.seat]}.`; }
       else if (e.k === 'newgame') { type = 'info'; html = `<b>Игра ${e.n}</b> започва. Хвърлете за начало.`; }
       else continue;
       out.unshift({ type, html });
@@ -527,14 +597,15 @@
       else if (G.phase === 'join') {
         h += `<p class="big">Покана за игра в стая <b>${O.code}</b>${O.info && O.info.host ? ` от <b>${esc2(O.info.host)}</b>` : ''}.</p>`;
         if (O.info) h += `<p>Ще играете с <b>${O.info.settings.color === 'black' ? 'белите' : 'черните'}</b> пулове, домът ви е <b>${O.info.settings.side === 'left' ? 'долу вдясно' : 'долу вляво'}</b>.</p>`;
-        if (O.info) h += `<p class="muted">Време за ход: ${ON().timeText(O.info.settings.moveTime)} · Запис: ${O.info.settings.record ? 'да' : 'не'}</p>`;
+        if (O.info) h += `<p class="muted">${ON().targetText(O.info.settings.target || 1)} · Време за ход: ${ON().timeText(O.info.settings.moveTime)} · Запис: ${O.info.settings.record ? 'да' : 'не'}</p>`;
         h += `<form class="join-form" data-form="join-room"><label>Вашето име <input name="name" maxlength="20" autocomplete="nickname" value="${esc2(ON().lastName())}" placeholder="напр. Мария" required></label><button class="btn primary" type="submit">Влез в играта</button></form>`;
         if (O.error) h += `<div class="msg">${esc2(O.error)}</div>`;
       } else h += '<p class="big">Свързване със стаята…</p>';
       return h + '</div>';
     }
     const me = s.you, op = 1 - me, opp = s.players[op];
-    h += `<div class="panel-head"><div>${tag} <span class="score">Резултат: вие <b>${s.score[me]}</b> : <b>${s.score[op]}</b> ${opp ? esc2(opp.name) : ''}</span></div>
+    const target = s.settings.target || 1;
+    h += `<div class="panel-head"><div>${tag} <span class="score">${target > 1 ? `Мач до ${target}: ` : 'Резултат: '}вие <b>${s.score[me]}</b> : <b>${s.score[op]}</b> ${opp ? esc2(opp.name) : ''}</span></div>
       <button class="btn small ghost" data-a="leave">Напусни</button></div>`;
     const conn = O.status === 'open' ? '' : `<div class="msg">Връзката със сървъра прекъсна — свързваме се отново…</div>`;
     h += conn;
@@ -563,11 +634,24 @@
     } else if (G.phase === 'sent') {
       h += '<p class="big">Изпращане на хода…</p>';
     } else if (G.phase === 'over') {
-      h += `<p class="big">${G.winner === HUMAN ? '🎉 Вие печелите' : esc2(oppName()) + ' печели'}${G.mars ? ' с марс' : ''} (+${G.winPts}).</p>`;
-      if (s.rematch[me]) h += `<p>Поискахте реванш. Чакаме ${esc2(oppName())}…</p>`;
-      else h += `<button class="btn primary" data-a="rematch">↻ Реванш</button>${s.rematch[op] ? ` <span class="muted">${esc2(oppName())} иска реванш.</span>` : ''}`;
-      if (s.mailed) h += `<p class="muted">Анализът на тази игра е изпратен на имейла ви.</p>`;
-      else if (s.canMail) h += `<p><button class="btn small" data-a="mail">📧 Анализ на играта по имейл</button></p>`;
+      h += `<p class="big">${G.winner === HUMAN ? '🎉 Вие печелите' : esc2(oppName()) + ' печели'}${target > 1 ? ' играта' : ''}${G.mars ? ' с марс' : ''} (+${G.winPts}).</p>`;
+      if (!s.matchOver) {
+        // мачът продължава: следващата игра започва, когато и двамата са готови
+        h += `<p>Резултат в мача: <b>${s.score[me]} : ${s.score[op]}</b> — играе се до ${target} точки.</p>`;
+        if (s.rematch[me]) h += `<p>Готови сте. Чакаме ${esc2(oppName())}…</p>`;
+        else h += `<button class="btn primary" data-a="rematch">▶ Следваща игра</button>${s.rematch[op] ? ` <span class="muted">${esc2(oppName())} е готов.</span>` : ''}`;
+      } else {
+        if (target > 1) h += `<p class="big">🏆 ${s.matchWinner === me ? '<b>Вие спечелихте мача</b>' : `<b>${esc2(oppName())}</b> спечели мача`} ${s.score[s.matchWinner]}:${s.score[1 - s.matchWinner]}.</p>`;
+        if (s.canAnalyze) {
+          h += `<div class="btns"><button class="btn" data-a="analysis">📊 Виж анализа</button>`;
+          if (s.canMail && !s.mailed) h += `<button class="btn ghost" data-a="mail">📧 Анализ по имейл</button>`;
+          h += '</div>';
+          if (s.mailed) h += `<p class="muted">Анализът е изпратен на имейла ви.</p>`;
+        }
+        const again = target > 1 ? '↻ Нов мач' : '↻ Реванш';
+        if (s.rematch[me]) h += `<p>Поискахте ${target > 1 ? 'нов мач' : 'реванш'}. Чакаме ${esc2(oppName())}…</p>`;
+        else h += `<p><button class="btn primary" data-a="rematch">${again}</button>${s.rematch[op] ? ` <span class="muted">${esc2(oppName())} иска ${target > 1 ? 'нов мач' : 'реванш'}.</span>` : ''}</p>`;
+      }
     } else if (G.phase === 'human-move') {
       const n = needed();
       const remTxt = G.turn.rem.length ? G.turn.rem.join(', ') : '—';
@@ -582,7 +666,7 @@
     }
     if (G.msg) h += `<div class="msg">${G.msg}</div>`;
     h += '</div>';
-    h += `<div class="room-info muted">Време за ход: ${ON().timeText(s.settings.moveTime)} · Запис на играта: ${s.settings.record ? 'включен' : 'изключен'}${s.phase !== 'waiting' && s.phase !== 'over' ? ' · <button class="link-btn" data-a="resign">Предай се</button>' : ''}</div>`;
+    h += `<div class="room-info muted">${ON().targetText(target)} · Време за ход: ${ON().timeText(s.settings.moveTime)} · Запис на играта: ${s.settings.record ? 'включен' : 'изключен'}${s.phase !== 'waiting' && s.phase !== 'over' ? ' · <button class="link-btn" data-a="resign">Предай се</button>' : ''}</div>`;
     h += `<div class="card log"><h4>Ходове</h4>${G.log.map((e) => `<div class="log-${e.type}">${e.html}</div>`).join('')}</div>`;
     return h;
   }
@@ -591,7 +675,8 @@
     const O = G.online;
     if (a === 'opening' || a === 'roll') { if (!O.conn.send({ t: 'roll' })) G.msg = 'Няма връзка със сървъра.'; render(); return true; }
     if (a === 'rematch') { O.conn.send({ t: 'rematch' }); return true; }
-    if (a === 'mail') { if (O.srv) openMailDialog(O.code, O.srv.game); return true; }
+    if (a === 'mail') { if (O.srv) { closeMailDialog(); openMailDialog(O.code, O.srv.match); } return true; }
+    if (a === 'analysis') { closeMailDialog(); openAnalysis(); return true; }
     if (a === 'leave') { location.hash = 'online'; return true; }
     if (a === 'resign') {
       if (G.confirmResign) { G.confirmResign = false; O.conn.send({ t: 'resign' }); }

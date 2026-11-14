@@ -7,6 +7,7 @@ import A from '../js/analysis.js';
 import { boardSvg, toPng, PLAYED_COLOR, BEST_COLOR } from './render.js';
 
 const MOVE_TIMES = [0, 30, 60, 120, 300];          // секунди, 0 = без ограничение
+const TARGETS = [1, 3, 5, 7];                      // мач до N точки; 1 = една игра
 const IDLE_TTL = 48 * 3600 * 1000;                 // празна/неактивна стая се изтрива след 48 часа
 const MAX_EVENTS = 120;
 const rollDie = () => 1 + (crypto.getRandomValues(new Uint32Array(1))[0] % 6);
@@ -46,11 +47,13 @@ export class Room extends DurableObject {
     this.g = {
       code: body.code, created: now, active: now,
       // color и side са за създателя (място 0); вторият играч получава другия цвят и отсрещната страна
-      settings: { moveTime, record: body.record !== false, color: body.color === 'black' ? 'black' : 'white', side: body.side === 'left' ? 'left' : 'right' },
+      settings: { moveTime, target: TARGETS.includes(Number(body.target)) ? Number(body.target) : 1, record: body.record !== false, color: body.color === 'black' ? 'black' : 'white', side: body.side === 'left' ? 'left' : 'right' },
       seats: [{ token: body.token, name }, null],
       board: E.initialBoard(), phase: 'waiting', turn: null, dice: null, turnId: 0,
       opening: [null, null], deadline: null, events: [], record: [], lastMove: null,
       score: [0, 0], winner: null, pts: 0, mars: false, rematch: [false, false], game: 1,
+      // мач: score е резултатът в текущия мач; wins — спечелени мачове в стаята
+      match: 1, matchFirst: 1, matchOver: false, matchWinner: null, wins: [0, 0],
     };
     this.event({ k: 'create', seat: 0 });
     await this.save();
@@ -96,7 +99,9 @@ export class Room extends DurableObject {
     if (!att || !this.g) return;
     let msg;
     try { msg = JSON.parse(raw); } catch (e) { return; }
+    this.ensureMatch();
     if (msg && msg.t === 'mail') { await this.mail(ws, att.seat, msg); return; }
+    if (msg && msg.t === 'analysis') { this.sendAnalysis(ws, att.seat); return; }
     const err = this.handle(att.seat, msg || {});
     if (err) { ws.send(JSON.stringify({ t: 'error', code: 'rule', msg: err })); this.sendState(ws); return; }
     this.g.active = Date.now();
@@ -137,7 +142,13 @@ export class Room extends DurableObject {
     if (msg.t === 'rematch') {
       if (g.phase !== 'over') return null;
       g.rematch[seat] = true;
-      if (g.rematch[0] && g.rematch[1]) this.newGame();
+      if (g.rematch[0] && g.rematch[1]) {
+        if (g.matchOver) {
+          // нов мач: резултатът започва от 0
+          g.match++; g.score = [0, 0]; g.matchOver = false; g.matchWinner = null; g.matchFirst = g.game + 1;
+        }
+        this.newGame();
+      }
       return null;
     }
     return null;
@@ -205,6 +216,26 @@ export class Room extends DurableObject {
     g.score[w] += pts;
     g.rematch = [false, false];
     this.event({ k: 'over', seat: w, pts, mars, resigned });
+    const target = g.settings.target || 1;
+    if (g.score[w] >= target) {
+      g.matchOver = true; g.matchWinner = w;
+      g.wins = g.wins || [0, 0]; g.wins[w]++;
+      this.event({ k: 'matchover', seat: w, score: g.score.slice(), target });
+    }
+  }
+
+  /** Старите стаи (отпреди мачовете) нямат тези полета. */
+  ensureMatch() {
+    const g = this.g;
+    if (!g.settings.target) g.settings.target = 1;
+    if (g.match == null) Object.assign(g, { match: 1, matchFirst: g.game, matchOver: g.phase === 'over', matchWinner: g.phase === 'over' ? g.winner : null, wins: [0, 0] });
+  }
+
+  /** Номерата на игрите от текущия мач. */
+  matchGames() {
+    const g = this.g, out = [];
+    for (let n = g.matchFirst || 1; n <= g.game; n++) out.push(n);
+    return out;
   }
 
   newGame() {
@@ -264,6 +295,7 @@ export class Room extends DurableObject {
 
   view(seat, skip) {
     const g = this.g;
+    this.ensureMatch();
     const online = [0, 1].map((s) => this.ctx.getWebSockets('s' + s).some((w) => w !== skip && w.readyState === 1));
     return {
       t: 'state', now: Date.now(), you: seat, code: g.code, settings: g.settings,
@@ -272,10 +304,58 @@ export class Room extends DurableObject {
       opening: g.opening, deadline: g.deadline, lastMove: g.lastMove, events: g.events.slice(-60),
       score: g.score, winner: g.winner, pts: g.pts, mars: g.mars, rematch: g.rematch, game: g.game,
       recorded: g.record.length,
-      // анализ по имейл: само за своето място и само за току-що завършената игра
-      canMail: this.mailReady() && g.phase === 'over' && g.settings.record && g.record.some((r) => r.game === g.game && r.seat === seat),
-      mailed: !!(g.mailed && g.mailed[g.game + ':' + seat]),
+      match: g.match, matchOver: g.matchOver, matchWinner: g.matchWinner, wins: g.wins,
+      // анализ: само за своето място и само след края на мача
+      canAnalyze: this.canAnalyze(seat),
+      canMail: this.mailReady() && this.canAnalyze(seat),
+      mailed: !!(g.mailed && g.mailed[this.mailKey(seat)]),
     };
+  }
+
+  canAnalyze(seat) {
+    const g = this.g, games = this.matchGames();
+    return g.phase === 'over' && g.matchOver && g.settings.record && g.record.some((r) => r.seat === seat && games.includes(r.game));
+  }
+  mailKey(seat) { return 'm' + this.g.match + ':' + seat; }
+
+  /** Анализ на мача за място seat. games — номерата на игрите; при повече от една ходовете носят и номера на играта. */
+  matchAnalysis(seat) {
+    const g = this.g, games = this.matchGames();
+    const a = A.analyzeGame(E, g.record, seat, games);
+    const multi = games.length > 1;
+    for (const m of a.mistakes) m.where = multi ? `${m.n} в игра ${m.game}` : String(m.n);
+    return a;
+  }
+
+  /** Изглед на дъската за мястото: цвят на пуловете и страна на дома (както в стаята). */
+  lookFor(seat) {
+    const g = this.g;
+    const other = (c) => (c === 'white' ? 'black' : 'white');
+    const c0 = g.settings.color || 'white', side0 = g.settings.side || 'right';
+    const mine = seat === 0 ? c0 : other(c0);
+    const side = seat === 0 ? side0 : side0 === 'right' ? 'left' : 'right';
+    return { colors: [mine, other(mine)], flip: side === 'left' };
+  }
+
+  /** Резултатът от мача като изречение (за писмото и за прегледа в приложението). */
+  resultText(seat) {
+    const g = this.g, opp = g.seats[1 - seat], oppName = opp ? opp.name : 'противникът';
+    const sc = `${g.score[seat]}:${g.score[1 - seat]}`;
+    const won = g.matchWinner === seat;
+    if ((g.settings.target || 1) === 1) return won ? `Спечелихте${g.mars ? ' с марс' : ''} (+${g.pts}).` : `Този път ${oppName} спечели${g.mars ? ' с марс' : ''}.`;
+    return won ? `Спечелихте мача до ${g.settings.target} точки с ${sc}.` : `Този път ${oppName} спечели мача до ${g.settings.target} точки (${sc}).`;
+  }
+
+  /** Анализът веднага в приложението — само на собственото място. */
+  sendAnalysis(ws, seat) {
+    const g = this.g;
+    let out;
+    if (!this.canAnalyze(seat)) out = { t: 'analysis', ok: false, msg: 'Анализът е достъпен след края на мача, ако играта се записва.' };
+    else {
+      const a = this.matchAnalysis(seat);
+      out = { t: 'analysis', ok: true, data: Object.assign(a, { look: this.lookFor(seat), result: this.resultText(seat), opponent: g.seats[1 - seat] ? g.seats[1 - seat].name : '', games: this.matchGames().length }) };
+    }
+    try { ws.send(JSON.stringify(out)); } catch (e) { /* затворена връзка */ }
   }
 
   // ---------------- анализ по имейл ----------------
@@ -288,19 +368,14 @@ export class Room extends DurableObject {
   async addImages(out, mistakes, seat) {
     const env = this.env || {};
     if (!env.IMAGES || !env.PUBLIC_URL || !mistakes.length) return;
-    const g = this.g;
-    const other = (c) => (c === 'white' ? 'black' : 'white');
-    const c0 = g.settings.color || 'white', side0 = g.settings.side || 'right';
-    const mine = seat === 0 ? c0 : other(c0);
-    const side = seat === 0 ? side0 : side0 === 'right' ? 'left' : 'right';
-    const look = { colors: [mine, other(mine)], flip: side === 'left' };
+    const look = this.lookFor(seat);
     const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (x) => x.toString(16).padStart(2, '0')).join('');
     const base = env.PUBLIC_URL.replace(/\/+$/, '') + '/img/a/' + id + '/';
     for (let k = 0; k < mistakes.length; k++) {
       const m = mistakes[k];
       for (const [kind, moves, color, field] of [['played', m.playedMoves, PLAYED_COLOR, 'imgPlayed'], ['best', m.bestMoves, BEST_COLOR, 'imgBest']]) {
         const png = await toPng(boardSvg(m.before, m.diceArr, moves, color, look), 640);
-        const name = m.n + '-' + kind + '.png';
+        const name = (k + 1) + '-' + kind + '.png'; // поредният номер — ходовете от различни игри може да имат еднакъв номер
         await env.IMAGES.put('a/' + id + '/' + name, png, { httpMetadata: { contentType: 'image/png' } });
         out[k][field] = base + name;
       }
@@ -312,18 +387,17 @@ export class Room extends DurableObject {
     const g = this.g;
     const reply = (ok, text) => { try { ws.send(JSON.stringify({ t: 'mail', ok, msg: text })); } catch (e) { /* затворена връзка */ } };
     const email = String(msg.email || '').trim();
-    if (g.phase !== 'over') return reply(false, 'Анализът се изпраща след края на играта.');
-    if (!g.settings.record) return reply(false, 'В тази стая играта не се записва, затова няма анализ.');
+    if (g.phase !== 'over' || !g.matchOver) return reply(false, 'Анализът се изпраща след края на мача.');
+    if (!this.canAnalyze(seat)) return reply(false, 'В тази стая играта не се записва, затова няма анализ.');
     if (email.length > 254 || !/^[^\s@<>"'(),;:]+@[^\s@<>"'(),;:]+\.[a-z]{2,}$/i.test(email)) return reply(false, 'Въведете валиден имейл адрес.');
     g.mailed = g.mailed || {};
-    const key = g.game + ':' + seat;
-    if (g.mailed[key]) return reply(false, 'Анализът на тази игра вече е изпратен.');
+    const key = this.mailKey(seat);
+    if (g.mailed[key]) return reply(false, 'Анализът вече е изпратен.');
     const env = this.env || {};
     if (!this.mailReady()) return reply(false, 'Изпращането по имейл още не е настроено.');
 
-    const a = A.analyzeGame(E, g.record, seat, g.game);
+    const a = this.matchAnalysis(seat);
     const me = g.seats[seat], opp = g.seats[1 - seat];
-    const won = g.winner === seat;
     let date;
     // дата без „г.“ — в писмото след нея следва точка
     try {
@@ -332,10 +406,10 @@ export class Room extends DurableObject {
     } catch (e) { date = new Date().toISOString().slice(0, 10); }
     const params = {
       name: me ? me.name : '', opponent: opp ? opp.name : '', date,
-      result: won ? `Спечелихте${g.mars ? ' с марс' : ''} (+${g.pts}).` : `Този път ${opp ? opp.name : 'противникът'} спечели${g.mars ? ' с марс' : ''}.`,
+      result: this.resultText(seat),
       summary: a.summary, accuracy: String(a.accuracy), scored: String(a.scored),
       best: String(a.counts.best), good: String(a.counts.good), ok: String(a.counts.ok), weak: String(a.counts.weak), bad: String(a.counts.bad),
-      mistakes: a.mistakes.map((m) => ({ n: String(m.n), dice: m.dice, played: m.played, best: m.best, label: m.label, why: m.why, bestWhy: m.bestWhy })),
+      mistakes: a.mistakes.map((m) => ({ n: m.where, dice: m.dice, played: m.played, best: m.best, label: m.label, why: m.why, bestWhy: m.bestWhy })),
       strengths: a.strengths, tips: a.tips,
     };
     // отбелязваме преди изпращането, за да не тръгнат две писма при двоен клик

@@ -3,6 +3,7 @@
   'use strict';
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const CODE_RE = /^[A-HJ-NP-Z2-9]{6}$/;
+  const TARGETS = [[1, 'Една игра'], [3, 'Мач до 3 точки'], [5, 'Мач до 5 точки'], [7, 'Мач до 7 точки']];
   const TIMES = [[0, 'Без ограничение'], [30, '30 секунди'], [60, '1 минута'], [120, '2 минути'], [300, '5 минути']];
 
   // Онлайн играта има нужда от сървъра (Cloudflare Worker); в единичния файл (артефакт) я няма.
@@ -25,6 +26,7 @@
   const normCode = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
   const roomLink = (code) => location.origin + location.pathname + '#room-' + code;
   const timeText = (s) => (TIMES.find((t) => t[0] === s) || [0, s + ' с'])[1];
+  const targetText = (n) => (TARGETS.find((t) => t[0] === n) || [0, 'Мач до ' + n + ' точки'])[1];
 
   async function createRoom(opts) {
     const token = newToken();
@@ -58,6 +60,7 @@
         if (m.t === 'state') handlers.state(m);
         else if (m.t === 'error') handlers.error(m);
         else if (m.t === 'mail' && handlers.mail) handlers.mail(m);
+        else if (m.t === 'analysis' && handlers.analysis) handlers.analysis(m);
       };
       ws.onclose = (ev) => {
         clearInterval(pingT);
@@ -94,10 +97,12 @@
             <label><input type="radio" name="side" value="left"> Долу вляво</label>
           </fieldset>
           <p class="muted small">Противникът получава другия цвят. Неговата дъска е завъртяна така, както я вижда човек, седнал срещу вас: неговият дом е от другата страна.</p>
+          <label>Продължителност <select name="target">${TARGETS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></label>
+          <p class="muted small">При мач се играят поредни игри. Обикновена победа носи 1 точка, марс — 2. Печели първият, който събере нужните точки.</p>
           <label>Време за ход <select name="moveTime">${TIMES.map(([v, t]) => `<option value="${v}" ${v === 60 ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
           <p class="muted small">Времето тече от началото на реда ви (хвърляне и местене). Ако изтече, сървърът изиграва случаен позволен ход вместо вас.</p>
           <label class="check"><input type="checkbox" name="record" checked> Запиши играта</label>
-          <p class="muted small">Записът пази всеки ход. Той е основа за личния анализ след играта, който предстои да добавим.</p>
+          <p class="muted small">Записът пази всеки ход. От него след края на мача всеки играч получава личен анализ — веднага в приложението или по имейл.</p>
           <button class="btn primary" type="submit">Създай стая</button>
         </form>
         <form class="card lobby-card" data-form="join">
@@ -125,7 +130,7 @@
       btn.disabled = true;
       try {
         if (f.dataset.form === 'create') {
-          const code = await createRoom({ name, moveTime: Number(fd.get('moveTime')), record: fd.get('record') === 'on', color: fd.get('color'), side: fd.get('side') });
+          const code = await createRoom({ name, target: Number(fd.get('target')), moveTime: Number(fd.get('moveTime')), record: fd.get('record') === 'on', color: fd.get('color'), side: fd.get('side') });
           location.hash = 'room-' + code;
         } else {
           const code = normCode(fd.get('code'));
@@ -146,5 +151,5 @@
     if (ci) ci.addEventListener('input', () => { ci.value = normCode(ci.value); });
   }
 
-  root.TablaOnline = { available, mountLobby, connect, seatFor, saveSeat, newToken, lastName, rememberName, roomLink, roomInfo, timeText, CODE_RE, esc };
+  root.TablaOnline = { available, mountLobby, connect, seatFor, saveSeat, newToken, lastName, rememberName, roomLink, roomInfo, timeText, targetText, CODE_RE, esc };
 })(typeof window !== 'undefined' ? window : globalThis);

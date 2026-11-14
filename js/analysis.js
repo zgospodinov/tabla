@@ -29,13 +29,18 @@
   ];
 
   function analyzeGame(E, record, seat, game) {
-    const turns = record.filter((r) => r.seat === seat && (game == null || r.game === game));
+    // game: номер на игра, списък от номера (цял мач) или null за всички
+    const games = game == null ? null : Array.isArray(game) ? game : [game];
+    const turns = record.filter((r) => r.seat === seat && (!games || games.includes(r.game)));
+    const perGame = {}; // пореден ход на играча в съответната игра
     const counts = { best: 0, good: 0, ok: 0, weak: 0, bad: 0 };
     const items = [];
     let scored = 0, lossSum = 0, forced = 0, auto = 0, hits = 0;
     const patternHits = PATTERNS.map(() => 0);
 
-    turns.forEach((r, idx) => {
+    turns.forEach((r) => {
+      const n = (perGame[r.game] = (perGame[r.game] || 0) + 1);
+      const gameNo = games ? games.indexOf(r.game) + 1 : r.game;
       // анализираният играч винаги е 0 — така текстовете на двигателя са „вие“
       const before = [r.before[seat], r.before[1 - seat]];
       const dice = r.dice;
@@ -54,7 +59,7 @@
         const theirs = E.explainPlay(before, 0, best.moves, best.board);
         mine.cons.forEach((c) => PATTERNS.forEach((p, k) => { if (p.re.test(strip(c))) patternHits[k]++; }));
         items.push({
-          n: idx + 1,
+          n, game: gameNo,
           dice: `${dice[0]}–${dice[1]}`,
           played: E.playText(0, r.moves),
           best: E.playText(0, best.moves),
@@ -69,7 +74,7 @@
     });
 
     items.sort((a, b) => b.loss - a.loss);
-    const mistakes = items.slice(0, 5).sort((a, b) => a.n - b.n);
+    const mistakes = items.slice(0, 5).sort((a, b) => a.game - b.game || a.n - b.n);
     const accuracy = scored ? Math.round(((counts.best + counts.good) * 100) / scored) : 100;
 
     const strengths = [];

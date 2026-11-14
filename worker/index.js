@@ -43,7 +43,7 @@ export default {
         const code = newCode();
         const r = await stub(env, code).fetch('https://room/init', {
           method: 'POST',
-          body: JSON.stringify({ code, token: body.token, name: cleanName(body.name), moveTime: body.moveTime, record: body.record, color: body.color, side: body.side }),
+          body: JSON.stringify({ code, token: body.token, name: cleanName(body.name), target: body.target, moveTime: body.moveTime, record: body.record, color: body.color, side: body.side }),
         });
         if (r.status === 409) continue;
         if (r.status === 400 && !cleanName(body.name)) return json({ error: 'Въведете вашето име.' }, 400);
