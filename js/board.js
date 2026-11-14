@@ -89,7 +89,7 @@
     let T = ''; // текстове и зарове — рисуват се извън огледалната група, за да не се обръщат
     let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" class="board-svg" role="img" aria-label="Дъска за табла">`;
     // самостоятелна картинка (PNG за писмата): стиловете не идват от CSS на страницата
-    if (view.standalone) s += `<style>text{font-family:'DejaVu Sans',Arial,sans-serif}.pt-num{fill:#f2dfb8;font-size:15px;font-weight:700}.stack-num{font-size:19px;font-weight:700;fill:#3a2a10}.stack-num.dark{fill:#fff}.center-text{font-size:34px;font-weight:700;fill:#fff6dc;paint-order:stroke;stroke:#4a2a14;stroke-width:5px}.die.used{opacity:.3}.zone-label{fill:#fff3d6;font-size:13px;font-weight:700}</style>`;
+    if (view.standalone) s += `<style>text{font-family:'DejaVu Sans',Arial,sans-serif}.pt-num{fill:#f2dfb8;font-size:15px;font-weight:700}.stack-num{font-size:19px;font-weight:700;fill:#3a2a10}.stack-num.dark{fill:#fff}.center-text{font-size:34px;font-weight:700;fill:#fff6dc;paint-order:stroke;stroke:#4a2a14;stroke-width:5px}.die.used{opacity:.3}.zone-label{fill:#fff3d6;font-size:13px;font-weight:700}.home-label{fill:#fff3d6;font-size:15px;font-weight:700;letter-spacing:.5px}</style>`;
     s += `<defs>
       <radialGradient id="chkW${UID}" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#e9dfc4"/></radialGradient>
       <radialGradient id="chkB${UID}" cx="40%" cy="35%" r="70%"><stop offset="0%" stop-color="#5a5a5a"/><stop offset="100%" stop-color="#151515"/></radialGradient>
@@ -114,6 +114,12 @@
     if (view.zones) {
       const z = (x, y, t) => `<text x="${mx(x)}" y="${y}" class="zone-label" text-anchor="middle">${t}</text>`;
       T += z(630, MID + 26, 'ВАШИЯТ ДОМ (1–6)') + z(210, MID + 26, 'ВЪНШНО ПОЛЕ (7–12)') + z(210, MID - 16, 'ВЪНШНО ПОЛЕ НА ПРОТИВНИКА (13–18)') + z(630, MID - 16, 'ДОМ НА ПРОТИВНИКА (19–24)');
+    } else if (view.homeLabels !== false) {
+      // „дом“ на всеки играч: долу вдясно е домът на играча отдолу, горе вдясно — на противника.
+      // Табелките са в тесните ивици над и под заровете и не се обръщат (рисуват се извън огледалната група).
+      const name = (p) => (isW(p) ? 'ДОМ НА БЕЛИТЕ' : 'ДОМ НА ЧЕРНИТЕ');
+      const tag = (y, p) => `<g class="home-tag"><rect x="${mx(630) - 88}" y="${y - 10}" width="176" height="21" rx="10.5" fill="#2e1a0c" fill-opacity="0.75"/><text x="${mx(630)}" y="${y + 6}" class="home-label" text-anchor="middle">${name(p)}</text></g>`;
+      T += tag(MID - 34, 1) + tag(MID + 34, 0);
     }
     // номера
     for (let h = 0; h < 24; h++) {
